@@ -155,7 +155,7 @@ Um vídeo demonstrativo do projeto em funcionamento está disponível no reposit
 
 ## 👤 Autor
 
-Carlos Icaro, desenvolvido como parte do Módulo 4 de IOT do Instituto de Tecnologia e Liderança.
+Carlos Icaro, desenvolvido como parte introdutória do Módulo 4 de IOT do Instituto de Tecnologia e Liderança.
 
 ## 📄 Licença
 
