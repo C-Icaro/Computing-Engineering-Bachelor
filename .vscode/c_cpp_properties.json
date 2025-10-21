@@ -1,0 +1,30 @@
+{
+    "configurations": [
+        {
+            "name": "ESP32-WROOM-DA",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "C:/Users/Inteli/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2/cores/esp32",
+                "C:/Users/Inteli/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2/variants/esp32",
+                "C:/Users/Inteli/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2/libraries/**",
+                "C:/Users/Inteli/AppData/Local/Arduino15/packages/esp32/tools/**",
+                "C:/Users/Inteli/AppData/Local/Arduino15/packages/esp32/hardware/esp32/3.3.2/**",
+                "C:/Users/Inteli/Documents/Arduino/libraries/**",
+                "C:/Users/Inteli/Documents/Arduino/libraries/ArduinoJson",
+                "C:/Users/Inteli/Documents/Arduino/libraries/CRC32",
+                "C:/Users/Inteli/Documents/Arduino/libraries/Adafruit_BME280_Library"
+            ],
+            "defines": [
+                "ESP32",
+                "ARDUINO_ARCH_ESP32",
+                "ARDUINOJSON_ENABLE_PROGMEM=0",
+                "ARDUINOJSON_ENABLE_ARDUINO_STRING=0"
+            ],
+            "compilerPath": "C:/Users/Inteli/AppData/Local/Arduino15/packages/esp32/tools/xtensa-esp-elf-gdb/16.3_20250913/bin/xtensa-esp32-elf-gdb.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64"
+        }
+    ],
+    "version": 4
+}
