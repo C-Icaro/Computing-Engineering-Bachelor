@@ -83,10 +83,10 @@ Os dados foram coletados durante a simulação e organizados no arquivo `valores
 ### 🔬 Parte Física (Hardware Real)
 Os dados foram coletados do circuito físico e organizados no arquivo `valores_reais.csv`:
 
-- **Tempo:** 1.202 a 5.213 segundos
-- **Tensão do Resistor:** 1.67V a 1.59V (decrescente)
-- **Tensão do Capacitor:** 3.33V a 3.41V (crescente)
-- **Total de pontos:** 11 medições
+- **Tempo:** 0 a 19.652 segundos
+- **Tensão do Resistor:** 3.86V a 2.71V (decrescente)
+- **Tensão do Capacitor:** 1.14V a 2.29V (crescente)
+- **Total de pontos:** 50 medições
 
 ### Análise dos Resultados
 - ✅ **Comportamento exponencial** observado tanto na simulação quanto no hardware real
@@ -152,16 +152,18 @@ Ponderada02/
 3. **Constante de Tempo:** Calculada e verificada nos dados simulados e físicos
 4. **Simulação vs Teoria:** Resultados próximos aos valores teóricos esperados
 5. **Hardware vs Simulação:** Comportamento similar, com pequenas variações devido a tolerâncias dos componentes reais
-6. **Precisão dos Dados:** Simulação oferece dados mais densos (49 pontos), hardware real com 11 pontos representativos
+6. **Precisão dos Dados:** Ambos os conjuntos oferecem dados densos (49 pontos na simulação, 50 pontos no hardware real)
 
 ### 📊 Comparação dos Resultados
 
 | Aspecto | Simulação | Hardware Real |
 |---------|-----------|---------------|
-| **Pontos de dados** | 49 | 11 |
-| **Tempo total** | 19.3 ms | 4.0 s |
-| **Vresistor inicial** | 5.00 V | 1.67 V |
-| **Vcapacitor inicial** | 0.00 V | 3.33 V |
+| **Pontos de dados** | 49 | 50 |
+| **Tempo total** | 19.3 ms | 19.7 s |
+| **Vresistor inicial** | 5.00 V | 3.86 V |
+| **Vcapacitor inicial** | 0.00 V | 1.14 V |
+| **Vresistor final** | 0.72 V | 2.71 V |
+| **Vcapacitor final** | 4.28 V | 2.29 V |
 | **Comportamento** | Exponencial | Exponencial |
 | **Lei de Kirchhoff** | ✅ Verificada | ✅ Verificada |
 
