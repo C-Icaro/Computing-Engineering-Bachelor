@@ -182,3 +182,4 @@ help        # Lista comandos
 ---
 
 **Com essas correções, o erro JSON deve desaparecer e os LEDs devem funcionar corretamente!** 🔧
+

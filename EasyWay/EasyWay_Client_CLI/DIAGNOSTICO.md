@@ -165,3 +165,4 @@ LED Amarelo (Transmitindo): APAGADO
 ---
 
 **Com essas correções, o LED vermelho deve apagar quando conectado e o relé deve funcionar corretamente!** 🔧
+

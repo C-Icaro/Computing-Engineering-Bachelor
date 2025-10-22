@@ -142,3 +142,4 @@ send cliente01 status  # Testa comunicação
 ---
 
 **O servidor agora está totalmente funcional para enviar comandos!** 🚀
+

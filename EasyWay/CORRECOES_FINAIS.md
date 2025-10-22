@@ -187,3 +187,4 @@ close       # Fecha porta
 **Agora o relé deve ser ativado corretamente via interface web!** 🎉
 
 Faça o upload do código corrigido e teste os botões na interface web em http://192.168.4.1
+

@@ -166,3 +166,4 @@ const char* WIFI_PASSWORD = "Lab2024@";
 ---
 
 **Agora você pode personalizar completamente a rede WiFi do seu sistema EasyWay!** 🌐
+
