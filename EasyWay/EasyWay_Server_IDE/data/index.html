@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EasyWay - Sistema de Comunicação IoT</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1><i class="fas fa-satellite-dish"></i> EasyWay</h1>
+                <p>Sistema de Comunicação IoT Local</p>
+                <div class="status-indicator">
+                    <span class="status-dot online"></span>
+                    <span id="serverStatus">Servidor Online</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation -->
+        <nav class="nav-tabs">
+            <button class="tab-button active" onclick="showTab('devices')">
+                <i class="fas fa-microchip"></i> Dispositivos
+            </button>
+            <button class="tab-button" onclick="showTab('control')">
+                <i class="fas fa-gamepad"></i> Controle
+            </button>
+            <button class="tab-button" onclick="showTab('messages')">
+                <i class="fas fa-comments"></i> Mensagens
+            </button>
+            <button class="tab-button" onclick="showTab('logs')">
+                <i class="fas fa-list-alt"></i> Logs
+            </button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Devices Tab -->
+            <div id="devices-tab" class="tab-content active">
+                <div class="section-header">
+                    <h2><i class="fas fa-microchip"></i> Dispositivos Conectados</h2>
+                    <button class="btn btn-primary" onclick="refreshDevices()">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon online">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="onlineCount">0</h3>
+                            <p>Online</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon total">
+                            <i class="fas fa-microchip"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="totalCount">0</h3>
+                            <p>Total</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="devices-grid" id="devicesGrid">
+                    <!-- Dispositivos serão carregados dinamicamente -->
+                </div>
+            </div>
+
+            <!-- Control Tab -->
+            <div id="control-tab" class="tab-content">
+                <div class="section-header">
+                    <h2><i class="fas fa-gamepad"></i> Controle Remoto</h2>
+                </div>
+                
+                <div class="control-panel">
+                    <div class="device-selector">
+                        <label for="deviceSelect">Selecionar Dispositivo:</label>
+                        <select id="deviceSelect">
+                            <option value="">Escolha um dispositivo...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="command-buttons">
+                        <button class="btn btn-success" onclick="sendCommand('abrir')">
+                            <i class="fas fa-unlock"></i> Abrir Porta
+                        </button>
+                        <button class="btn btn-danger" onclick="sendCommand('fechar')">
+                            <i class="fas fa-lock"></i> Fechar Porta
+                        </button>
+                        <button class="btn btn-info" onclick="sendCommand('status')">
+                            <i class="fas fa-info-circle"></i> Status
+                        </button>
+                    </div>
+                </div>
+
+                <div class="message-panel">
+                    <h3><i class="fas fa-paper-plane"></i> Enviar Mensagem</h3>
+                    <div class="message-form">
+                        <textarea id="messageText" placeholder="Digite sua mensagem aqui..." rows="3"></textarea>
+                        <button class="btn btn-primary" onclick="sendMessage()">
+                            <i class="fas fa-paper-plane"></i> Enviar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Messages Tab -->
+            <div id="messages-tab" class="tab-content">
+                <div class="section-header">
+                    <h2><i class="fas fa-comments"></i> Mensagens</h2>
+                    <button class="btn btn-secondary" onclick="clearMessages()">
+                        <i class="fas fa-trash"></i> Limpar
+                    </button>
+                </div>
+                
+                <div class="messages-container" id="messagesContainer">
+                    <!-- Mensagens serão carregadas dinamicamente -->
+                </div>
+            </div>
+
+            <!-- Logs Tab -->
+            <div id="logs-tab" class="tab-content">
+                <div class="section-header">
+                    <h2><i class="fas fa-list-alt"></i> Logs do Sistema</h2>
+                    <button class="btn btn-secondary" onclick="refreshLogs()">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                </div>
+                
+                <div class="logs-container" id="logsContainer">
+                    <!-- Logs serão carregados dinamicamente -->
+                </div>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2024 EasyWay - Sistema IoT Local | Desenvolvido para Inteli</p>
+        </footer>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
