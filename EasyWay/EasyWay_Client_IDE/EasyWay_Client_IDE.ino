@@ -6,6 +6,9 @@
 #include <WiFi.h>
 #include <WiFiUDP.h>
 #include <ArduinoJson.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BME280.h>
 
 // Configurações do dispositivo
 const String DEVICE_ID = "cliente01";
@@ -22,6 +25,11 @@ const int BUTTON_PIN = 14;          // Botão para comandos locais (GPIO14 é se
 
 // Instâncias dos módulos
 WiFiUDP udp;
+Adafruit_BME280 bme; // Instância do sensor BME280
+
+// Configurações do BME280
+#define BME280_ADDRESS 0x76
+const float SEALEVEL_HPA = 1013.25; // Pressão ao nível do mar para cálculo de altitude
 
 // Variáveis de estado
 bool isConnected = false;
@@ -54,6 +62,31 @@ void setup() {
   Serial.println("- LED Transmitindo: GPIO" + String(LED_TRANSMIT_PIN));
   Serial.println("- Relé Porta: GPIO" + String(DOOR_RELAY_PIN));
   Serial.println("- Botão Local: GPIO" + String(BUTTON_PIN));
+  
+  // Inicializar I2C e BME280
+  Wire.begin();
+  Serial.println("Inicializando sensor BME280...");
+  
+  if (!bme.begin(BME280_ADDRESS)) {
+    Serial.println("ERRO: Sensor BME280 não encontrado!");
+    Serial.println("Verifique a fiação (VCC, GND, SDA, SCL) e alimentação.");
+    digitalWrite(LED_ERROR_PIN, HIGH);
+    Serial.println("LED Vermelho: LIGADO (erro BME280)");
+  } else {
+    Serial.println("BME280 inicializado com sucesso!");
+    Serial.print("ID do sensor: 0x");
+    Serial.println(bme.sensorID(), HEX);
+    
+    // Configurar sensor para modo normal com configurações recomendadas
+    bme.setSampling(Adafruit_BME280::MODE_NORMAL,
+                    Adafruit_BME280::SAMPLING_X2,  // Temperatura oversampling
+                    Adafruit_BME280::SAMPLING_X16, // Pressão oversampling
+                    Adafruit_BME280::SAMPLING_X1,  // Umidade oversampling
+                    Adafruit_BME280::FILTER_X16,   // Filtro IIR
+                    Adafruit_BME280::STANDBY_MS_500);
+    
+    Serial.println("Configuração do BME280 concluída!");
+  }
   
   // Conectar ao Wi-Fi
   Serial.print("Conectando ao Wi-Fi: ");
@@ -136,13 +169,22 @@ void processWiFiMessages() {
     Serial.print(" - ");
     Serial.println(incomingPacket);
     
-    // Processar comando simples
+    // Processar comandos simples
     if (strstr(incomingPacket, "abrir") != NULL) {
       openDoor();
       Serial.println("Comando recebido: ABRIR porta");
     } else if (strstr(incomingPacket, "fechar") != NULL) {
       closeDoor();
       Serial.println("Comando recebido: FECHAR porta");
+    } else if (strstr(incomingPacket, "temperatura") != NULL || strstr(incomingPacket, "temp") != NULL) {
+      String sensorData = readBME280Data();
+      sendMessage(sensorData);
+      Serial.println("Comando recebido: DADOS DO SENSOR");
+    } else if (strstr(incomingPacket, "status") != NULL) {
+      String status = doorOpen ? "aberto" : "fechado";
+      String message = "{\"id\":\"" + DEVICE_ID + "\",\"type\":\"status\",\"status\":\"" + status + "\"}";
+      sendMessage(message);
+      Serial.println("Comando recebido: STATUS DA PORTA");
     }
   }
 }
@@ -165,10 +207,16 @@ void closeDoor() {
 
 void sendHeartbeat() {
   if (millis() - lastHeartbeat > HEARTBEAT_INTERVAL) {
-    String message = "{\"id\":\"" + DEVICE_ID + "\",\"type\":\"heartbeat\",\"status\":\"ping\"}";
-    sendMessage(message);
+    // Enviar heartbeat básico
+    String heartbeatMessage = "{\"id\":\"" + DEVICE_ID + "\",\"type\":\"heartbeat\",\"status\":\"ping\"}";
+    sendMessage(heartbeatMessage);
+    
+    // Enviar dados do sensor BME280 junto com o heartbeat
+    String sensorData = readBME280Data();
+    sendMessage(sensorData);
+    
     lastHeartbeat = millis();
-    Serial.println("Heartbeat enviado");
+    Serial.println("Heartbeat e dados do sensor enviados");
   }
 }
 
@@ -215,6 +263,45 @@ void checkLocalButton() {
       Serial.println("Botão solto");
     }
   }
+}
+
+String readBME280Data() {
+  // Ler todos os valores do sensor
+  float temperature = bme.readTemperature();        // °C
+  float humidity = bme.readHumidity();              // %
+  float pressure = bme.readPressure() / 100.0F;     // hPa
+  float altitude = bme.readAltitude(SEALEVEL_HPA);  // metros
+
+  // Criar JSON com os dados do sensor
+  DynamicJsonDocument doc(512);
+  doc["id"] = DEVICE_ID;
+  doc["type"] = "sensor_data";
+  doc["temperature"] = temperature;
+  doc["humidity"] = humidity;
+  doc["pressure"] = pressure;
+  doc["altitude"] = altitude;
+  doc["timestamp"] = millis();
+
+  String jsonString;
+  serializeJson(doc, jsonString);
+  
+  // Log dos dados lidos
+  Serial.println("--- Dados BME280 ---");
+  Serial.print("Temperatura: ");
+  Serial.print(temperature, 2);
+  Serial.println(" °C");
+  Serial.print("Umidade: ");
+  Serial.print(humidity, 2);
+  Serial.println(" %");
+  Serial.print("Pressão: ");
+  Serial.print(pressure, 2);
+  Serial.println(" hPa");
+  Serial.print("Altitude aproximada: ");
+  Serial.print(altitude, 2);
+  Serial.println(" m");
+  Serial.println("-------------------");
+  
+  return jsonString;
 }
 
 void updateLEDs() {

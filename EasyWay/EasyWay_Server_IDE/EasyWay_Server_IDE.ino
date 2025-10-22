@@ -24,6 +24,14 @@ String clientStatus = "Desconectado";
 String lastMessage = "Nenhuma mensagem";
 unsigned long lastHeartbeat = 0;
 
+// Variáveis para dados do BME280
+float lastTemperature = 0.0;
+float lastHumidity = 0.0;
+float lastPressure = 0.0;
+float lastAltitude = 0.0;
+unsigned long lastSensorUpdate = 0;
+String sensorStatus = "Sem dados";
+
 void setup() {
   Serial.begin(115200);
   Serial.println("EasyWay Server - Sistema Completo");
@@ -134,6 +142,31 @@ void processMessage(String message) {
   } else if (type == "status") {
     clientStatus = status + " (" + deviceId + ")";
     Serial.println("Status atualizado: " + deviceId + " = " + status);
+  } else if (type == "sensor_data") {
+    // Processar dados do sensor BME280
+    lastTemperature = doc["temperature"];
+    lastHumidity = doc["humidity"];
+    lastPressure = doc["pressure"];
+    lastAltitude = doc["altitude"];
+    lastSensorUpdate = millis();
+    sensorStatus = "Atualizado";
+    
+    Serial.println("=== Dados BME280 Recebidos ===");
+    Serial.print("Temperatura: ");
+    Serial.print(lastTemperature, 2);
+    Serial.println(" °C");
+    Serial.print("Umidade: ");
+    Serial.print(lastHumidity, 2);
+    Serial.println(" %");
+    Serial.print("Pressão: ");
+    Serial.print(lastPressure, 2);
+    Serial.println(" hPa");
+    Serial.print("Altitude: ");
+    Serial.print(lastAltitude, 2);
+    Serial.println(" m");
+    Serial.println("=============================");
+    
+    clientStatus = "Ativo com dados (" + deviceId + ")";
   }
   
   lastMessage = message;
@@ -152,6 +185,7 @@ void setupWebRoutes() {
   // API endpoints
   webServer.on("/api/status", HTTP_GET, handleStatus);
   webServer.on("/api/devices", HTTP_GET, handleDevices);
+  webServer.on("/api/sensor", HTTP_GET, handleSensorData);
   webServer.on("/api/command", HTTP_POST, handleCommand);
   
   // Página 404
@@ -189,10 +223,23 @@ void handleRoot() {
   html += "<h3>Última Mensagem</h3>";
   html += "<p>" + lastMessage + "</p>";
   html += "</div>";
+  
+  // Seção de dados do sensor BME280
+  html += "<div class='status'>";
+  html += "<h3>🌡️ Dados do Sensor BME280</h3>";
+  html += "<p><strong>Status:</strong> " + sensorStatus + "</p>";
+  html += "<p><strong>Temperatura:</strong> " + String(lastTemperature, 2) + " °C</p>";
+  html += "<p><strong>Umidade:</strong> " + String(lastHumidity, 2) + " %</p>";
+  html += "<p><strong>Pressão:</strong> " + String(lastPressure, 2) + " hPa</p>";
+  html += "<p><strong>Altitude:</strong> " + String(lastAltitude, 2) + " m</p>";
+  html += "<p><strong>Última atualização:</strong> " + String((millis() - lastSensorUpdate) / 1000) + "s atrás</p>";
+  html += "</div>";
+  
   html += "<h3>Controle de Dispositivos</h3>";
   html += "<button onclick='sendCommand(\"abrir\")'>🔓 Abrir Porta</button>";
   html += "<button onclick='sendCommand(\"fechar\")' class='danger'>🔒 Fechar Porta</button>";
   html += "<button onclick='sendCommand(\"status\")'>📊 Solicitar Status</button>";
+  html += "<button onclick='sendCommand(\"temperatura\")'>🌡️ Solicitar Dados do Sensor</button>";
   html += "<button onclick='location.reload()'>🔄 Atualizar</button>";
   html += "<script>";
   html += "function sendCommand(cmd) {";
@@ -220,6 +267,29 @@ void handleStatus() {
   doc["uptime"] = millis();
   doc["wifi_ssid"] = WIFI_SSID;
   doc["ip"] = WiFi.softAPIP().toString();
+  
+  // Adicionar dados do sensor
+  doc["sensor"]["temperature"] = lastTemperature;
+  doc["sensor"]["humidity"] = lastHumidity;
+  doc["sensor"]["pressure"] = lastPressure;
+  doc["sensor"]["altitude"] = lastAltitude;
+  doc["sensor"]["status"] = sensorStatus;
+  doc["sensor"]["last_update"] = lastSensorUpdate;
+  
+  String response;
+  serializeJson(doc, response);
+  webServer.send(200, "application/json", response);
+}
+
+void handleSensorData() {
+  DynamicJsonDocument doc(512);
+  doc["temperature"] = lastTemperature;
+  doc["humidity"] = lastHumidity;
+  doc["pressure"] = lastPressure;
+  doc["altitude"] = lastAltitude;
+  doc["status"] = sensorStatus;
+  doc["last_update"] = lastSensorUpdate;
+  doc["age_seconds"] = (millis() - lastSensorUpdate) / 1000;
   
   String response;
   serializeJson(doc, response);
