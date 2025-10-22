@@ -18,9 +18,6 @@
 Instale as seguintes bibliotecas através do Library Manager do Arduino IDE:
 
 ```cpp
-// Comunicação via rádio
-#include <RF24.h>           // Versão 1.3.9+
-#include <SPI.h>            // Incluída por padrão
 
 // Servidor web e WiFi
 #include <WiFi.h>           // Incluída no ESP32 Core

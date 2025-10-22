@@ -1,15 +1,14 @@
-#ifndef WEB_SERVER_H
-#define WEB_SERVER_H
+#ifndef WEB_SERVER_MANAGER_H
+#define WEB_SERVER_MANAGER_H
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <NetworkClient.h>
-#include <WebServer.h>
+#include <WiFiServer.h>
 #include <SPIFFS.h>
 
 class WebServerManager {
 private:
-    WebServer server;
+    WiFiServer server;
     bool initialized;
     String ssid;
     String password;
@@ -46,6 +45,13 @@ private:
     void handleRoot();
     void handleNotFound();
     String getContentType(const String& filename);
+    void handleHttpRequest(WiFiClient& client);
+    void sendFileToClient(WiFiClient& client, const String& path, const String& contentType);
+    void sendHtmlPage(WiFiClient& client);
+    void sendCssFile(WiFiClient& client);
+    void sendJsFile(WiFiClient& client);
+    String parseHttpMethod(const String& request);
+    String parseHttpPath(const String& request);
 };
 
 #endif

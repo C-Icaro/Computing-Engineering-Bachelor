@@ -3,12 +3,12 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiUdp.h>
+#include <WiFiUDP.h>
 #include <ArduinoJson.h>
 
 class WiFiCommunication {
 private:
-    WiFiUdp udp;
+    WiFiUDP udp;
     bool initialized;
     String ssid;
     String password;
