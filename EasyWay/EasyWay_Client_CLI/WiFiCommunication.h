@@ -28,7 +28,6 @@ public:
     
     // Comunicação
     bool sendMessage(const String& deviceId, const String& message);
-    bool sendMessageToIP(const IPAddress& targetIP, const String& deviceId, const String& message);
     bool hasMessage();
     String receiveMessage();
     
@@ -41,7 +40,6 @@ public:
     bool isInitialized() const;
     bool isConnected() const;
     void printNetworkInfo();
-    IPAddress getRemoteIP();
     
     // Utilitários
     String getDeviceIP() const;
@@ -50,7 +48,7 @@ public:
     
 private:
     bool connectToNetwork();
-    void startUDPServer();
+    void startUDPClient();
     String extractDeviceIdFromMessage(const String& message);
 };
 

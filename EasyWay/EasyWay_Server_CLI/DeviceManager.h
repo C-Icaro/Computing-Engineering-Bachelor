@@ -11,6 +11,7 @@ struct Device {
     unsigned long lastSeen;
     bool isOnline;
     String lastMessage;
+    IPAddress clientIP;  // IP do cliente conectado
 };
 
 struct LogEntry {
@@ -40,10 +41,13 @@ public:
     
     // Gerenciamento de dispositivos
     bool addDevice(const String& id);
+    bool addDevice(const String& id, const IPAddress& clientIP);
     bool removeDevice(const String& id);
     Device* getDevice(const String& id);
     void updateDeviceStatus(const String& id, const String& status);
     void updateDeviceStatus(const String& id, const String& status, unsigned long timestamp);
+    void updateDeviceIP(const String& id, const IPAddress& clientIP);
+    IPAddress getDeviceIP(const String& id);
     
     // Controle de dispositivos
     bool executeCommand(const String& id, const String& command);

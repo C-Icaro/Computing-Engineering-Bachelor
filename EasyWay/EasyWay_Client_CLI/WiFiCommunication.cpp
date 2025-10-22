@@ -13,14 +13,17 @@ bool WiFiCommunication::initialize(const char* ssid, const char* password, int p
     this->password = String(password);
     this->serverPort = port;
     
-    // Configurar modo WiFi como Access Point
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(ssid, password);
+    // Configurar modo WiFi
+    WiFi.mode(WIFI_STA);
     
-    Serial.println("Access Point criado: " + this->ssid);
+    // Conectar à rede
+    if (!connectToNetwork()) {
+        Serial.println("ERRO: Falha ao conectar à rede WiFi");
+        return false;
+    }
     
-    // Iniciar servidor UDP
-    startUDPServer();
+    // Iniciar cliente UDP
+    startUDPClient();
     
     initialized = true;
     Serial.println("Comunicação WiFi inicializada com sucesso");
@@ -47,65 +50,19 @@ bool WiFiCommunication::sendMessage(const String& deviceId, const String& messag
     // Criar pacote UDP com ID do dispositivo e mensagem
     String packet = deviceId + "|" + message;
     
-    Serial.println("=== ENVIANDO MENSAGEM UDP ===");
-    Serial.print("Device ID: ");
-    Serial.println(deviceId);
-    Serial.print("Mensagem: ");
-    Serial.println(message);
-    Serial.print("Pacote completo: ");
-    Serial.println(packet);
-    Serial.print("IP de destino: ");
-    Serial.println(serverIP);
-    Serial.print("Porta: ");
-    Serial.println(serverPort);
-    
     // Enviar via UDP
     udp.beginPacket(serverIP, serverPort);
     udp.write((uint8_t*)packet.c_str(), packet.length());
     bool success = udp.endPacket();
     
     if (success) {
-        Serial.println("Mensagem UDP enviada com sucesso");
+        Serial.print("Mensagem enviada para ");
+        Serial.print(deviceId);
+        Serial.print(": ");
+        Serial.println(message);
     } else {
-        Serial.println("ERRO: Falha ao enviar mensagem UDP");
+        Serial.println("ERRO: Falha ao enviar mensagem WiFi");
     }
-    Serial.println("=== FIM DO ENVIO ===");
-    
-    return success;
-}
-
-bool WiFiCommunication::sendMessageToIP(const IPAddress& targetIP, const String& deviceId, const String& message) {
-    if (!initialized) {
-        Serial.println("ERRO: WiFi não inicializado");
-        return false;
-    }
-    
-    // Criar pacote UDP com ID do dispositivo e mensagem
-    String packet = deviceId + "|" + message;
-    
-    Serial.println("=== ENVIANDO MENSAGEM UDP PARA IP ESPECÍFICO ===");
-    Serial.print("Device ID: ");
-    Serial.println(deviceId);
-    Serial.print("Mensagem: ");
-    Serial.println(message);
-    Serial.print("Pacote completo: ");
-    Serial.println(packet);
-    Serial.print("IP de destino: ");
-    Serial.println(targetIP);
-    Serial.print("Porta: ");
-    Serial.println(serverPort);
-    
-    // Enviar via UDP para o IP específico
-    udp.beginPacket(targetIP, serverPort);
-    udp.write((uint8_t*)packet.c_str(), packet.length());
-    bool success = udp.endPacket();
-    
-    if (success) {
-        Serial.println("Mensagem UDP enviada com sucesso para IP específico");
-    } else {
-        Serial.println("ERRO: Falha ao enviar mensagem UDP para IP específico");
-    }
-    Serial.println("=== FIM DO ENVIO ===");
     
     return success;
 }
@@ -130,22 +87,17 @@ String WiFiCommunication::receiveMessage() {
         messageBuffer[len] = '\0';
         
         String fullMessage = String(messageBuffer);
-        Serial.print("Mensagem WiFi recebida: ");
+        Serial.println("=== MENSAGEM UDP RECEBIDA ===");
+        Serial.print("Tamanho: ");
+        Serial.println(len);
+        Serial.print("Conteúdo: ");
         Serial.println(fullMessage);
+        Serial.println("=== FIM DA MENSAGEM UDP ===");
         
-        // Extrair mensagem JSON do formato "deviceId|message"
-        int separatorIndex = fullMessage.indexOf('|');
-        if (separatorIndex > 0) {
-            String jsonMessage = fullMessage.substring(separatorIndex + 1);
-            Serial.print("Mensagem JSON extraída: ");
-            Serial.println(jsonMessage);
-            return jsonMessage;
-        } else {
-            Serial.println("ERRO: Formato de mensagem inválido");
-            return "";
-        }
+        return fullMessage;
     }
     
+    Serial.println("ERRO: Nenhum dado recebido do UDP");
     return "";
 }
 
@@ -168,45 +120,25 @@ bool WiFiCommunication::isInitialized() const {
 }
 
 bool WiFiCommunication::isConnected() const {
-    return WiFi.getMode() == WIFI_AP;
+    return WiFi.status() == WL_CONNECTED;
 }
 
 void WiFiCommunication::printNetworkInfo() {
     if (initialized) {
-        Serial.print("SSID do Access Point: ");
+        Serial.print("SSID: ");
         Serial.println(ssid);
-        Serial.print("IP do Access Point: ");
-        Serial.println(WiFi.softAPIP());
+        Serial.print("IP do dispositivo: ");
+        Serial.println(WiFi.localIP());
         Serial.print("IP do servidor: ");
         Serial.println(serverIP);
         Serial.print("Porta: ");
         Serial.println(serverPort);
         Serial.print("Endereço MAC: ");
-        Serial.println(WiFi.softAPmacAddress());
-        Serial.print("Número de clientes conectados: ");
-        Serial.println(WiFi.softAPgetStationNum());
+        Serial.println(WiFi.macAddress());
+        Serial.print("Força do sinal: ");
+        Serial.print(WiFi.RSSI());
+        Serial.println(" dBm");
     }
-}
-
-IPAddress WiFiCommunication::getRemoteIP() {
-    if (!initialized) {
-        return IPAddress(0, 0, 0, 0);
-    }
-    
-    // Obter IP do último pacote UDP recebido
-    return udp.remoteIP();
-}
-
-String WiFiCommunication::getDeviceIP() const {
-    return WiFi.softAPIP().toString();
-}
-
-String WiFiCommunication::getDeviceMAC() const {
-    return WiFi.softAPmacAddress();
-}
-
-int WiFiCommunication::getSignalStrength() const {
-    return WiFi.RSSI();
 }
 
 bool WiFiCommunication::connectToNetwork() {
@@ -234,12 +166,12 @@ bool WiFiCommunication::connectToNetwork() {
     }
 }
 
-void WiFiCommunication::startUDPServer() {
+void WiFiCommunication::startUDPClient() {
     if (udp.begin(serverPort)) {
-        Serial.print("Servidor UDP iniciado na porta ");
+        Serial.print("Cliente UDP iniciado na porta ");
         Serial.println(serverPort);
     } else {
-        Serial.println("ERRO: Falha ao iniciar servidor UDP");
+        Serial.println("ERRO: Falha ao iniciar cliente UDP");
     }
 }
 

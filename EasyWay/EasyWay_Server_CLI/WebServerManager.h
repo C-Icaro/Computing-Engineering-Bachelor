@@ -6,6 +6,11 @@
 #include <WiFiServer.h>
 #include <SPIFFS.h>
 
+// Forward declarations para evitar dependência circular
+class WiFiCommunication;
+class SecurityLayer;
+class DeviceManager;
+
 class WebServerManager {
 private:
     WiFiServer server;
@@ -13,12 +18,18 @@ private:
     String ssid;
     String password;
     
+    // Referências para comunicação
+    WiFiCommunication* wifiComm;
+    SecurityLayer* security;
+    DeviceManager* deviceManager;
+    
 public:
     WebServerManager();
     ~WebServerManager();
     
     // Inicialização
     bool initialize(const char* ssid, const char* password);
+    void setReferences(WiFiCommunication* wifi, SecurityLayer* sec, DeviceManager* dev);
     void shutdown();
     
     // Gerenciamento de rotas
@@ -50,6 +61,7 @@ private:
     void sendHtmlPage(WiFiClient& client);
     void sendCssFile(WiFiClient& client);
     void sendJsFile(WiFiClient& client);
+    void handleControlAPI(WiFiClient& client);
     String parseHttpMethod(const String& request);
     String parseHttpPath(const String& request);
 };

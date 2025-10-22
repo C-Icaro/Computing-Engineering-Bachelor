@@ -9,6 +9,7 @@ DeviceManager::DeviceManager() : deviceCount(0), logCount(0), logIndex(0) {
         devices[i].lastSeen = 0;
         devices[i].isOnline = false;
         devices[i].lastMessage = "";
+        devices[i].clientIP = IPAddress(0, 0, 0, 0);
     }
     
     for (int i = 0; i < MAX_LOGS; i++) {
@@ -27,6 +28,10 @@ void DeviceManager::initialize() {
 }
 
 bool DeviceManager::addDevice(const String& id) {
+    return addDevice(id, IPAddress(0, 0, 0, 0));
+}
+
+bool DeviceManager::addDevice(const String& id, const IPAddress& clientIP) {
     if (deviceCount >= MAX_DEVICES) {
         Serial.println("ERRO: Máximo de dispositivos atingido");
         return false;
@@ -35,6 +40,12 @@ bool DeviceManager::addDevice(const String& id) {
     int index = findDeviceIndex(id);
     if (index != -1) {
         Serial.println("Dispositivo já existe: " + id);
+        // Atualizar IP se fornecido
+        if (clientIP != IPAddress(0, 0, 0, 0)) {
+            devices[index].clientIP = clientIP;
+            Serial.print("IP do dispositivo atualizado: ");
+            Serial.println(clientIP);
+        }
         return true;
     }
     
@@ -44,10 +55,15 @@ bool DeviceManager::addDevice(const String& id) {
     devices[deviceCount].lastSeen = millis();
     devices[deviceCount].isOnline = false;
     devices[deviceCount].lastMessage = "";
+    devices[deviceCount].clientIP = clientIP;
     
     deviceCount++;
     
     Serial.println("Dispositivo adicionado: " + id);
+    if (clientIP != IPAddress(0, 0, 0, 0)) {
+        Serial.print("IP do cliente: ");
+        Serial.println(clientIP);
+    }
     addLog(id, "device_added", millis(), "Dispositivo registrado no sistema");
     
     return true;
@@ -103,6 +119,29 @@ void DeviceManager::updateDeviceStatus(const String& id, const String& status, u
         Serial.print(": ");
         Serial.println(status);
     }
+}
+
+void DeviceManager::updateDeviceIP(const String& id, const IPAddress& clientIP) {
+    Device* device = getDevice(id);
+    if (device == nullptr) {
+        // Adicionar dispositivo se não existir
+        addDevice(id, clientIP);
+        return;
+    }
+    
+    device->clientIP = clientIP;
+    Serial.print("IP atualizado para dispositivo ");
+    Serial.print(id);
+    Serial.print(": ");
+    Serial.println(clientIP);
+}
+
+IPAddress DeviceManager::getDeviceIP(const String& id) {
+    Device* device = getDevice(id);
+    if (device == nullptr) {
+        return IPAddress(0, 0, 0, 0);
+    }
+    return device->clientIP;
 }
 
 bool DeviceManager::executeCommand(const String& id, const String& command) {
@@ -223,6 +262,7 @@ String DeviceManager::getDevicesJson() {
         device["lastSeen"] = devices[i].lastSeen;
         device["isOnline"] = devices[i].isOnline;
         device["lastMessage"] = devices[i].lastMessage;
+        device["clientIP"] = devices[i].clientIP.toString();
         device["formattedLastSeen"] = formatTimestamp(devices[i].lastSeen);
     }
     
