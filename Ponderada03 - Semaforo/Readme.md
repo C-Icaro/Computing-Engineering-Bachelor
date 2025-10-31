@@ -106,8 +106,9 @@ O ciclo repete continuamente. Você pode alterar esses tempos no `setup()` ao in
 #### Resistores aplicados no semáforo de madeira (ilustração)
 ![Resistores no semáforo](./instalação-resistoresNoSemaforoDeMadeira.jpg)
 
-#### Frame ilustrativo do vídeo demonstrativo
-![Frame do vídeo demonstrativo](./vídeoDemonstrativo.jpg)
+#### Vídeo demonstrativo
+
+O vídeo demonstrativo está disponível em: ```./vídeoDemonstrativo.mp4```
 
 ### Avaliação de Pares
 - Cada atividade deve ser avaliada por pelo menos dois colegas, conforme barema do curso.
