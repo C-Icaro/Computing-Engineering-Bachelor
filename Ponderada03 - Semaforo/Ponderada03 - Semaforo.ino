@@ -117,9 +117,9 @@ void setup() {
   ledYellow = new Led(26);
   ledRed = new Led(25);
 
-  // Durações simples: Verde 5s, Amarelo 1s, Vermelho 5s
+  // Durações conforme desafio (Butantã): Vermelho 6s, Verde 4s, Amarelo 2s
   trafficLight = new TrafficLight(ledGreen, ledYellow, ledRed,
-                                  5000UL, 1000UL, 5000UL);
+                                  4000UL, 2000UL, 6000UL);
 
   trafficLight->begin();
 }
