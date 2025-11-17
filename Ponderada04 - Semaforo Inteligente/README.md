@@ -961,8 +961,8 @@ Ponderada04 - Semaforo Inteligente/
 
 ## 📝 Notas Importantes
 
-- O sistema continua funcionando mesmo se o broker MQTT não estiver disponível
-- A interface web funciona independentemente do MQTT
+- O sistema só continua funcionando se o broker MQTT estiver disponível
+- A interface web não funciona independentemente do MQTT
 - Os valores de histerese podem ser ajustados conforme o ambiente
 - O Access Point do ESP32 permite até 4 conexões simultâneas
 
