@@ -1,9 +1,24 @@
 #include <WiFi.h>
 #include <WebServer.h>
+#include <PubSubClient.h>
 // ==================== WI-FI AP ======================
 const char* ssid = "iPhone";
 const char* password = "12345678";
 WebServer server(80);
+// ==================== MQTT BROKER ===================
+// IMPORTANTE: Ajuste o IP abaixo para o IP do seu PC onde o Mosquitto está rodando
+// Se o ESP32 está como Access Point, o PC precisa estar conectado na mesma rede Wi-Fi
+// Exemplo: se o PC tem IP 192.168.4.2 na rede do ESP32, use "192.168.4.2"
+// Para descobrir o IP do PC: no Windows use "ipconfig", no Linux/Mac use "ifconfig"
+const char* mqtt_server = "169.254.14.138";  // IP do PC com Mosquitto (AJUSTE AQUI!)
+const int mqtt_port = 1883;
+const char* mqtt_client_id = "semaforo_inteligente";
+const char* mqtt_topic_telemetria = "semaforo/telemetria";
+const char* mqtt_topic_comandos = "semaforo/comandos";
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+unsigned long ultimaPublicacaoMQTT = 0;
+const unsigned long intervaloPublicacaoMQTT = 5000;  // Publica a cada 5 segundos
 // =============== PINOS DO SEMÁFORO ==================
 const int S1_red    = 27;
 const int S1_yellow = 14;
@@ -13,6 +28,9 @@ const int S2_yellow = 25;
 const int S2_green  = 26;
 // =============== LDR ================================
 const int LDR_PIN = 32;
+
+// =============== DECLARAÇÕES FORWARD =================
+void publicarTelemetriaMQTT();  // Declaração forward para uso na classe
 
 // =============== CLASSES ============================
 class Semaforo {
@@ -202,14 +220,94 @@ private:
   }
 
   void publicarTelemetriaMQTT() {
-    // Placeholder para integração futura com broker Mosquitto.
-    // Assim que o cliente MQTT estiver configurado, enviar telemetriaAtual aqui.
+    // Chama a função global que tem acesso ao mqttClient
+    ::publicarTelemetriaMQTT();
   }
 };
 
 Semaforo semaforoPrincipal(S1_red, S1_yellow, S1_green);
 Semaforo semaforoSecundario(S2_red, S2_yellow, S2_green);
 SemaforoInteligente controlador(semaforoPrincipal, semaforoSecundario, LDR_PIN);
+// ======================================================
+// ================== FUNÇÕES MQTT =====================
+// ======================================================
+void callbackMQTT(char* topic, byte* payload, unsigned int length) {
+  Serial.print("[MQTT] Mensagem recebida no topico: ");
+  Serial.println(topic);
+  
+  String mensagem = "";
+  for (unsigned int i = 0; i < length; i++) {
+    mensagem += (char)payload[i];
+  }
+  Serial.print("[MQTT] Conteudo: ");
+  Serial.println(mensagem);
+  
+  // Processar comandos recebidos via MQTT
+  if (String(topic) == mqtt_topic_comandos) {
+    if (mensagem == "auto" || mensagem == "AUTO") {
+      controlador.setModoAuto();
+      Serial.println("[MQTT] Comando executado: Modo Automático");
+    } else if (mensagem == "normal" || mensagem == "NORMAL") {
+      controlador.setModoNormal();
+      Serial.println("[MQTT] Comando executado: Modo Normal");
+    } else if (mensagem == "noturno" || mensagem == "NOTURNO") {
+      controlador.setModoNoturno();
+      Serial.println("[MQTT] Comando executado: Modo Noturno");
+    }
+  }
+}
+
+void reconectarMQTT() {
+  while (!mqttClient.connected()) {
+    Serial.print("[MQTT] Tentando conectar ao broker...");
+    if (mqttClient.connect(mqtt_client_id)) {
+      Serial.println(" Conectado!");
+      // Subscrever ao tópico de comandos
+      if (mqttClient.subscribe(mqtt_topic_comandos)) {
+        Serial.print("[MQTT] Inscrito no topico: ");
+        Serial.println(mqtt_topic_comandos);
+      } else {
+        Serial.println("[MQTT] ERRO: Falha ao se inscrever no topico");
+      }
+    } else {
+      Serial.print("[MQTT] Falha, rc=");
+      Serial.print(mqttClient.state());
+      Serial.println(" Tentando novamente em 5 segundos...");
+      delay(5000);
+    }
+  }
+}
+
+void publicarTelemetriaMQTT() {
+  if (!mqttClient.connected()) {
+    reconectarMQTT();
+  }
+  
+  mqttClient.loop();  // Manter conexão ativa e processar mensagens
+  
+  unsigned long agora = millis();
+  if (agora - ultimaPublicacaoMQTT >= intervaloPublicacaoMQTT) {
+    ultimaPublicacaoMQTT = agora;
+    
+    const auto& telemetria = controlador.getTelemetria();
+    
+    // Criar JSON da telemetria
+    String json = "{";
+    json += "\"luminosidade\":" + String(telemetria.luz) + ",";
+    json += "\"modoAuto\":" + String(telemetria.autoAtivo ? "true" : "false") + ",";
+    json += "\"modoNoturno\":" + String(telemetria.noturnoAtivo ? "true" : "false") + ",";
+    json += "\"timestamp\":" + String(telemetria.timestamp);
+    json += "}";
+    
+    // Publicar no tópico
+    if (mqttClient.publish(mqtt_topic_telemetria, json.c_str())) {
+      Serial.print("[MQTT] Telemetria publicada: ");
+      Serial.println(json);
+    } else {
+      Serial.println("[MQTT] ERRO: Falha ao publicar telemetria");
+    }
+  }
+}
 // ======================================================
 // ================== FUNÇÃO HTML =======================
 // ======================================================
@@ -647,6 +745,33 @@ void setup() {
   Serial.println("[Setup] Iniciando servidor HTTP na porta 80...");
   server.begin();
   Serial.println("[Setup] Servidor HTTP iniciado com sucesso!");
+  
+  Serial.println("[Setup] Configurando cliente MQTT...");
+  mqttClient.setServer(mqtt_server, mqtt_port);
+  mqttClient.setCallback(callbackMQTT);
+  Serial.print("[Setup] Broker MQTT: ");
+  Serial.print(mqtt_server);
+  Serial.print(":");
+  Serial.println(mqtt_port);
+  Serial.print("[Setup] Topico telemetria: ");
+  Serial.println(mqtt_topic_telemetria);
+  Serial.print("[Setup] Topico comandos: ");
+  Serial.println(mqtt_topic_comandos);
+  
+  // Tentar conectar ao broker MQTT (não bloqueia se não conseguir)
+  Serial.println("[Setup] Tentando conectar ao broker MQTT...");
+  if (mqttClient.connect(mqtt_client_id)) {
+    Serial.println("[Setup] Conectado ao broker MQTT com sucesso!");
+    if (mqttClient.subscribe(mqtt_topic_comandos)) {
+      Serial.print("[Setup] Inscrito no topico de comandos: ");
+      Serial.println(mqtt_topic_comandos);
+    }
+  } else {
+    Serial.println("[Setup] AVISO: Nao foi possivel conectar ao broker MQTT.");
+    Serial.println("[Setup] O sistema continuara funcionando, mas sem MQTT.");
+    Serial.println("[Setup] Verifique se o Mosquitto esta rodando no IP configurado.");
+  }
+  
   Serial.println("\n========================================");
   Serial.println("  SISTEMA PRONTO!");
   Serial.println("========================================\n");
