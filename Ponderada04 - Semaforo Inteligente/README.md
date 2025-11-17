@@ -613,37 +613,50 @@ void callbackMQTT(char* topic, byte* payload, unsigned int length) {
 2. Chama `callbackMQTT()` automaticamente
 3. Interpreta comando e altera modo do semáforo
 
-#### `reconectarMQTT()` (Linhas 252-271)
+#### `tentarReconectarMQTT()` (Linhas 263-289)
 
-**Função:** Reconecta ao broker se perder conexão
+**Função:** Tenta reconectar ao broker de forma não bloqueante
 
 ```cpp
-void reconectarMQTT() {
-  while (!mqttClient.connected()) {
-    // Tenta conectar
-    // Se conseguir, subscreve ao tópico de comandos
-    // Se falhar, aguarda 5 segundos e tenta novamente
-  }
+void tentarReconectarMQTT() {
+  // Verifica se passou o intervalo (10 segundos)
+  // Tenta conectar uma vez
+  // Se conseguir, subscreve ao tópico de comandos
+  // Se falhar, retorna imediatamente (não bloqueia)
+  // Sistema continua funcionando normalmente
 }
 ```
+
+**Características:**
+- **Não bloqueante:** Não usa `delay()` ou loops infinitos
+- **Intervalo:** Tenta reconectar a cada 10 segundos
+- **Não interfere:** Sistema continua funcionando mesmo sem MQTT
+- **Flag de status:** `mqttDisponivel` indica se MQTT está ativo
 
 **Códigos de erro comuns:**
 - `rc=-2`: Network unreachable (rede não alcançável)
 - `rc=-1`: Connection refused (broker recusou)
 - `rc=0`: Sucesso
 
-#### `publicarTelemetriaMQTT()` (Linhas 273-302)
+#### `publicarTelemetriaMQTT()` (Linhas 291-325)
 
-**Função:** Publica dados do semáforo no broker
+**Função:** Publica dados do semáforo no broker (não bloqueante)
 
 ```cpp
 void publicarTelemetriaMQTT() {
-  // Verifica conexão (reconecta se necessário)
-  // A cada 5 segundos:
+  // Verifica conexão (tenta reconectar se necessário, mas não bloqueia)
+  // Se não estiver conectado, retorna imediatamente
+  // A cada 5 segundos (se conectado):
   //   - Cria JSON com telemetria atual
   //   - Publica no tópico "semaforo/telemetria"
+  // Se falhar, sistema continua funcionando normalmente
 }
 ```
+
+**Características:**
+- **Não bloqueante:** Retorna imediatamente se MQTT não estiver disponível
+- **Tolerante a falhas:** Sistema continua funcionando mesmo se publicação falhar
+- **Reconexão automática:** Tenta reconectar em background sem interferir
 
 **Formato JSON publicado:**
 ```json
@@ -885,6 +898,62 @@ Recebe comandos de controle:
 - `"normal"` ou `"NORMAL"` → Ativa modo normal
 - `"noturno"` ou `"NOTURNO"` → Ativa modo noturno
 
+## 📸 Demonstração Visual
+
+### Montagem Física Completa
+
+<p align="center"><em>Figura 1: Montagem completa do semáforo inteligente com ESP32, LEDs e sensor LDR</em></p>
+
+![Montagem Completa](MontagemCompleta.jpeg)
+
+<p align="center"><strong>Fonte:</strong> Autoral, 2025</p>
+
+### Circuito e Conexões
+
+<p align="center"><em>Figura 2: Diagrama do circuito mostrando conexões dos LEDs e sensor LDR</em></p>
+
+![Circuito](Circuito.jpeg)
+
+<p align="center"><strong>Fonte:</strong> Autoral, 2025</p>
+
+### Posicionamento do Sensor LDR
+
+<p align="center"><em>Figura 3: Detalhe do posicionamento do sensor LDR no circuito</em></p>
+
+![Posição do LDR](PosiçãoLDR.png)
+
+<p align="center"><strong>Fonte:</strong> Autoral, 2025</p>
+
+### Interface Web - Parte 1
+
+<p align="center"><em>Figura 4: Interface web mostrando dashboard principal com luminosidade, modo atual e controles</em></p>
+
+![Interface Web Parte 1](InterfaceParte1.png)
+
+<p align="center"><strong>Fonte:</strong> Autoral, 2025</p>
+
+### Interface Web - Parte 2
+
+<p align="center"><em>Figura 5: Interface web mostrando visualização dos semáforos e informações adicionais</em></p>
+
+![Interface Web Parte 2](InterfaceParte2.png)
+
+<p align="center"><strong>Fonte:</strong> Autoral, 2025</p>
+
+### 🎥 Vídeo Demonstrativo
+
+Um vídeo demonstrativo completo do projeto em funcionamento está disponível no repositório:
+
+**Arquivo:** [`VídeoDemonstrativo.mp4`](./VídeoDemonstrativo.mp4)
+
+O vídeo demonstra:
+- ✅ Montagem física do circuito
+- ✅ Funcionamento dos semáforos em modo normal
+- ✅ Transição automática para modo noturno (cobrindo o LDR)
+- ✅ Interface web em funcionamento
+- ✅ Controle via botões da interface
+- ✅ Visualização em tempo real dos dados do LDR
+
 ## 🐛 Troubleshooting
 
 ### Problema: Interface web não carrega
@@ -926,7 +995,12 @@ Recebe comandos de controle:
 Ponderada04 - Semaforo Inteligente/
 ├── Ponderada04 - Semaforo Inteligente.ino  # Código principal
 ├── README.md                                 # Este arquivo
-└── (outros arquivos de documentação)
+├── MontagemCompleta.jpeg                     # Foto da montagem física completa
+├── Circuito.jpeg                             # Foto do circuito e conexões
+├── PosiçãoLDR.png                            # Detalhe do posicionamento do LDR
+├── InterfaceParte1.png                       # Screenshot da interface web (parte 1)
+├── InterfaceParte2.png                       # Screenshot da interface web (parte 2)
+└── VídeoDemonstrativo.mp4                    # Vídeo demonstrativo do projeto
 ```
 
 ## 🎓 Conceitos Aprendidos
@@ -961,8 +1035,10 @@ Ponderada04 - Semaforo Inteligente/
 
 ## 📝 Notas Importantes
 
-- O sistema só continua funcionando se o broker MQTT estiver disponível
-- A interface web não funciona independentemente do MQTT
+- O sistema continua funcionando mesmo se o broker MQTT não estiver disponível
+- A interface web funciona independentemente do MQTT
+- Os semáforos funcionam normalmente sem conexão MQTT
+- Tentativas de reconexão MQTT são feitas automaticamente a cada 10 segundos (não bloqueante)
 - Os valores de histerese podem ser ajustados conforme o ambiente
 - O Access Point do ESP32 permite até 4 conexões simultâneas
 
@@ -976,5 +1052,5 @@ Este projeto é de código aberto e está disponível para fins educacionais.
 
 ---
 
-**Última atualização:** 2025
+**Última atualização:** Novembro, 2025.
 
