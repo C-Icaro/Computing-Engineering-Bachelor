@@ -10,7 +10,7 @@ WebServer server(80);
 // Se o ESP32 está como Access Point, o PC precisa estar conectado na mesma rede Wi-Fi
 // Exemplo: se o PC tem IP 192.168.4.2 na rede do ESP32, use "192.168.4.2"
 // Para descobrir o IP do PC: no Windows use "ipconfig", no Linux/Mac use "ifconfig"
-const char* mqtt_server = "169.254.14.138";  // IP do PC com Mosquitto (AJUSTE AQUI!)
+const char* mqtt_server = "192.168.4.2";  // IP do PC com Mosquitto (AJUSTE AQUI!)
 const int mqtt_port = 1883;
 const char* mqtt_client_id = "semaforo_inteligente";
 const char* mqtt_topic_telemetria = "semaforo/telemetria";
@@ -19,6 +19,9 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 unsigned long ultimaPublicacaoMQTT = 0;
 const unsigned long intervaloPublicacaoMQTT = 5000;  // Publica a cada 5 segundos
+unsigned long ultimaTentativaReconexaoMQTT = 0;
+const unsigned long intervaloReconexaoMQTT = 10000;  // Tenta reconectar a cada 10 segundos
+bool mqttDisponivel = false;  // Flag para indicar se MQTT está disponível
 // =============== PINOS DO SEMÁFORO ==================
 const int S1_red    = 27;
 const int S1_yellow = 14;
@@ -257,11 +260,18 @@ void callbackMQTT(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-void reconectarMQTT() {
-  while (!mqttClient.connected()) {
+void tentarReconectarMQTT() {
+  // Função não bloqueante - tenta reconectar apenas se passou o intervalo
+  unsigned long agora = millis();
+  
+  // Só tenta reconectar se passou o intervalo (evita tentativas muito frequentes)
+  if (agora - ultimaTentativaReconexaoMQTT >= intervaloReconexaoMQTT) {
+    ultimaTentativaReconexaoMQTT = agora;
+    
     Serial.print("[MQTT] Tentando conectar ao broker...");
     if (mqttClient.connect(mqtt_client_id)) {
       Serial.println(" Conectado!");
+      mqttDisponivel = true;
       // Subscrever ao tópico de comandos
       if (mqttClient.subscribe(mqtt_topic_comandos)) {
         Serial.print("[MQTT] Inscrito no topico: ");
@@ -272,17 +282,21 @@ void reconectarMQTT() {
     } else {
       Serial.print("[MQTT] Falha, rc=");
       Serial.print(mqttClient.state());
-      Serial.println(" Tentando novamente em 5 segundos...");
-      delay(5000);
+      Serial.println(" (Sistema continuara funcionando sem MQTT)");
+      mqttDisponivel = false;
     }
   }
 }
 
 void publicarTelemetriaMQTT() {
+  // Verifica conexão sem bloquear
   if (!mqttClient.connected()) {
-    reconectarMQTT();
+    mqttDisponivel = false;
+    tentarReconectarMQTT();  // Tenta reconectar (não bloqueante)
+    return;  // Sai se não estiver conectado - sistema continua funcionando
   }
   
+  mqttDisponivel = true;
   mqttClient.loop();  // Manter conexão ativa e processar mensagens
   
   unsigned long agora = millis();
@@ -299,12 +313,13 @@ void publicarTelemetriaMQTT() {
     json += "\"timestamp\":" + String(telemetria.timestamp);
     json += "}";
     
-    // Publicar no tópico
+    // Publicar no tópico (não bloqueia se falhar)
     if (mqttClient.publish(mqtt_topic_telemetria, json.c_str())) {
       Serial.print("[MQTT] Telemetria publicada: ");
       Serial.println(json);
     } else {
-      Serial.println("[MQTT] ERRO: Falha ao publicar telemetria");
+      Serial.println("[MQTT] ERRO: Falha ao publicar telemetria (sistema continua funcionando)");
+      mqttDisponivel = false;
     }
   }
 }
@@ -760,16 +775,20 @@ void setup() {
   
   // Tentar conectar ao broker MQTT (não bloqueia se não conseguir)
   Serial.println("[Setup] Tentando conectar ao broker MQTT...");
+  Serial.println("[Setup] NOTA: O sistema funcionara normalmente mesmo sem MQTT.");
   if (mqttClient.connect(mqtt_client_id)) {
     Serial.println("[Setup] Conectado ao broker MQTT com sucesso!");
+    mqttDisponivel = true;
     if (mqttClient.subscribe(mqtt_topic_comandos)) {
       Serial.print("[Setup] Inscrito no topico de comandos: ");
       Serial.println(mqtt_topic_comandos);
     }
   } else {
     Serial.println("[Setup] AVISO: Nao foi possivel conectar ao broker MQTT.");
-    Serial.println("[Setup] O sistema continuara funcionando, mas sem MQTT.");
-    Serial.println("[Setup] Verifique se o Mosquitto esta rodando no IP configurado.");
+    Serial.println("[Setup] O sistema continuara funcionando normalmente sem MQTT.");
+    Serial.println("[Setup] Tentativas de reconexao serao feitas automaticamente a cada 10 segundos.");
+    Serial.println("[Setup] Interface web e semaforos funcionam independentemente do MQTT.");
+    mqttDisponivel = false;
   }
   
   Serial.println("\n========================================");
