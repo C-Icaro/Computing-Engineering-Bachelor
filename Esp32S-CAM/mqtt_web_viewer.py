@@ -46,6 +46,10 @@ status_info = {}
 mqtt_client = None
 lock = threading.Lock()
 
+# =================== Histórico de Frames ===================
+MAX_HISTORY = 50  # Número máximo de frames no histórico
+frame_history = []  # Lista de dicionários: {'frame': bytes, 'timestamp': int, 'frame_id': int}
+
 # =================== Template HTML ===================
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -142,6 +146,72 @@ HTML_TEMPLATE = """
         .info-item:last-child {
             border-bottom: none;
         }
+        .history-section {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            backdrop-filter: blur(10px);
+        }
+        .history-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .history-controls button {
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        .history-info {
+            text-align: center;
+            color: #ccc;
+            margin-bottom: 15px;
+        }
+        .history-gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .history-item {
+            position: relative;
+            cursor: pointer;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+        }
+        .history-item:hover {
+            border-color: rgba(255,255,255,0.5);
+            transform: scale(1.05);
+        }
+        .history-item.active {
+            border-color: #fff;
+            box-shadow: 0 0 15px rgba(255,255,255,0.5);
+        }
+        .history-item img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .history-item-label {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.7);
+            color: #fff;
+            padding: 4px 8px;
+            font-size: 11px;
+            text-align: center;
+        }
+        .toggle-history {
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -162,6 +232,7 @@ HTML_TEMPLATE = """
             <button onclick="sendCommand('toggle_yolo')">Toggle YOLO</button>
             <button onclick="sendCommand('toggle_mqtt')">Toggle MQTT</button>
             <button onclick="sendCommand('restart')">Reiniciar ESP32</button>
+            <button onclick="toggleHistory()" class="toggle-history">📚 Ver Histórico</button>
         </div>
         
         <div class="info-panel">
@@ -182,11 +253,30 @@ HTML_TEMPLATE = """
                 <span>Uptime:</span>
                 <span id="uptime">--</span>
             </div>
+            <div class="info-item">
+                <span>Frames no Histórico:</span>
+                <span id="historyCount">0</span>
+            </div>
+        </div>
+        
+        <div class="history-section" id="historySection" style="display: none;">
+            <h3>📚 Histórico de Frames</h3>
+            <div class="history-controls">
+                <button onclick="previousFrame()">◀ Anterior</button>
+                <span class="history-info" id="historyInfo">Frame 0 de 0</span>
+                <button onclick="nextFrame()">Próximo ▶</button>
+                <button onclick="goToLatest()">⏩ Mais Recente</button>
+                <button onclick="goToOldest()">⏪ Mais Antigo</button>
+            </div>
+            <div class="history-gallery" id="historyGallery"></div>
         </div>
     </div>
     
     <script>
         let frameCount = 0;
+        let currentHistoryIndex = -1;
+        let historyData = [];
+        let historyMode = false;
         
         // Atualizar contador de frames
         setInterval(() => {
@@ -197,8 +287,131 @@ HTML_TEMPLATE = """
                     document.getElementById('espStatus').textContent = data.status || 'Desconhecido';
                     document.getElementById('espIP').textContent = data.ip || '--';
                     document.getElementById('uptime').textContent = data.uptime ? data.uptime + 's' : '--';
+                    document.getElementById('historyCount').textContent = data.history_count || 0;
                 });
         }, 2000);
+        
+        // Carregar histórico
+        function loadHistory() {
+            fetch('/api/history')
+                .then(r => r.json())
+                .then(data => {
+                    historyData = data.frames || [];
+                    updateHistoryGallery();
+                    if (currentHistoryIndex === -1 && historyData.length > 0) {
+                        currentHistoryIndex = historyData.length - 1;
+                    }
+                    updateHistoryView();
+                });
+        }
+        
+        // Atualizar galeria de histórico
+        function updateHistoryGallery() {
+            const gallery = document.getElementById('historyGallery');
+            gallery.innerHTML = '';
+            
+            historyData.forEach((frame, index) => {
+                const item = document.createElement('div');
+                item.className = 'history-item' + (index === currentHistoryIndex ? ' active' : '');
+                item.onclick = () => selectHistoryFrame(index);
+                
+                const img = document.createElement('img');
+                img.src = `/api/history/frame/${index}`;
+                img.alt = `Frame ${frame.frame_id}`;
+                
+                const label = document.createElement('div');
+                label.className = 'history-item-label';
+                const date = new Date(frame.timestamp);
+                label.textContent = `#${frame.frame_id} - ${date.toLocaleTimeString()}`;
+                
+                item.appendChild(img);
+                item.appendChild(label);
+                gallery.appendChild(item);
+            });
+        }
+        
+        // Selecionar frame do histórico
+        function selectHistoryFrame(index) {
+            currentHistoryIndex = index;
+            updateHistoryView();
+            updateHistoryGallery();
+        }
+        
+        // Atualizar visualização do histórico
+        function updateHistoryView() {
+            if (currentHistoryIndex >= 0 && currentHistoryIndex < historyData.length) {
+                const frame = historyData[currentHistoryIndex];
+                document.getElementById('stream').src = `/api/history/frame/${currentHistoryIndex}`;
+                document.getElementById('historyInfo').textContent = 
+                    `Frame ${currentHistoryIndex + 1} de ${historyData.length} (ID: ${frame.frame_id})`;
+            }
+        }
+        
+        // Navegação
+        function previousFrame() {
+            if (currentHistoryIndex > 0) {
+                currentHistoryIndex--;
+                updateHistoryView();
+                updateHistoryGallery();
+            }
+        }
+        
+        function nextFrame() {
+            if (currentHistoryIndex < historyData.length - 1) {
+                currentHistoryIndex++;
+                updateHistoryView();
+                updateHistoryGallery();
+            }
+        }
+        
+        function goToLatest() {
+            if (historyData.length > 0) {
+                currentHistoryIndex = historyData.length - 1;
+                updateHistoryView();
+                updateHistoryGallery();
+            }
+        }
+        
+        function goToOldest() {
+            if (historyData.length > 0) {
+                currentHistoryIndex = 0;
+                updateHistoryView();
+                updateHistoryGallery();
+            }
+        }
+        
+        // Alternar modo histórico
+        function toggleHistory() {
+            historyMode = !historyMode;
+            const section = document.getElementById('historySection');
+            const stream = document.getElementById('stream');
+            
+            if (historyMode) {
+                section.style.display = 'block';
+                loadHistory();
+                // Atualizar histórico a cada 3 segundos
+                if (!window.historyInterval) {
+                    window.historyInterval = setInterval(loadHistory, 3000);
+                }
+            } else {
+                section.style.display = 'none';
+                stream.src = '/video_feed';
+                if (window.historyInterval) {
+                    clearInterval(window.historyInterval);
+                    window.historyInterval = null;
+                }
+            }
+        }
+        
+        // Atalhos de teclado
+        document.addEventListener('keydown', (e) => {
+            if (historyMode) {
+                if (e.key === 'ArrowLeft') previousFrame();
+                if (e.key === 'ArrowRight') nextFrame();
+                if (e.key === 'Home') goToOldest();
+                if (e.key === 'End') goToLatest();
+            }
+        });
         
         function sendCommand(action) {
             fetch('/api/command', {
@@ -283,12 +496,28 @@ def on_message(client, userdata, msg):
                 
                 if success:
                     jpeg_bytes = buffer.tobytes()
+                    frame_id = data.get('frame_id', frame_count)
+                    timestamp = data.get('timestamp', int(time.time() * 1000))
+                    
                     with lock:
                         current_frame_jpeg = jpeg_bytes
                         frame_count += 1
                         new_count = frame_count
+                        
+                        # Adicionar ao histórico
+                        frame_history.append({
+                            'frame': jpeg_bytes,
+                            'timestamp': timestamp,
+                            'frame_id': frame_id,
+                            'width': data.get('width', 0),
+                            'height': data.get('height', 0)
+                        })
+                        
+                        # Manter apenas os últimos MAX_HISTORY frames
+                        if len(frame_history) > MAX_HISTORY:
+                            frame_history.pop(0)
                     
-                    print(f"[✓ Frame {new_count}] Recebido e armazenado: {data.get('width')}x{data.get('height')} ({len(frame_data)} bytes JPEG -> {len(jpeg_bytes)} bytes para stream)")
+                    print(f"[✓ Frame {new_count}] Recebido e armazenado: {data.get('width')}x{data.get('height')} ({len(frame_data)} bytes JPEG -> {len(jpeg_bytes)} bytes para stream) [Histórico: {len(frame_history)} frames]")
                 else:
                     print("[ERRO] cv2.imencode falhou - não foi possível codificar o frame")
             else:
@@ -370,10 +599,48 @@ def api_stats():
             'frames': frame_count,
             'has_frame': has_frame,
             'frame_size': frame_size,
+            'history_count': len(frame_history),
             'status': status_info.get('status', 'unknown'),
             'ip': status_info.get('ip', '--'),
             'uptime': status_info.get('uptime', 0)
         })
+
+
+@app.route('/api/history')
+def api_history():
+    """API para obter lista de frames do histórico."""
+    with lock:
+        frames_info = []
+        for frame_data in frame_history:
+            frames_info.append({
+                'frame_id': frame_data['frame_id'],
+                'timestamp': frame_data['timestamp'],
+                'width': frame_data.get('width', 0),
+                'height': frame_data.get('height', 0)
+            })
+        return jsonify({
+            'frames': frames_info,
+            'total': len(frame_history)
+        })
+
+
+@app.route('/api/history/frame/<int:index>')
+def api_history_frame(index):
+    """API para obter uma imagem específica do histórico."""
+    with lock:
+        if 0 <= index < len(frame_history):
+            frame_data = frame_history[index]
+            return Response(
+                frame_data['frame'],
+                mimetype='image/jpeg',
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
+        else:
+            return jsonify({'error': 'Frame index out of range'}), 404
 
 
 @app.route('/api/command', methods=['POST'])
