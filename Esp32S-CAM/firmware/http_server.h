@@ -5,11 +5,13 @@
 #include <img_converters.h>
 #include "esp_camera.h"
 #include "CameraController.h"
+#include "YoloController.h"
 #include "MQTTPublisher.h"
 #include <Arduino.h>
 
 // Declarações externas das instâncias globais
 extern CameraController cameraController;
+extern YoloController yoloController;
 extern MQTTPublisher mqttPublisher;
 
 // HTML da interface web
@@ -116,40 +118,64 @@ static const char INDEX_HTML[] PROGMEM = R"rawliteral(
 </head>
 <body>
   <div class="container">
-    <h1>ESP32-CAM Monitoramento Ferroviário</h1>
-    <p class="subtitle">Sistema de monitoramento de via férrea com detecção de movimento.</p>
+    <h1>ESP32-CAM Smart Vision</h1>
+    <p class="subtitle">Monitore o streaming e ative/desative o YOLO com apenas um clique.</p>
     <div class="video-box">
       <img id="stream" src="/stream" alt="Live stream" />
     </div>
     <div class="controls">
-      <span id="statusBadge" class="badge off">Status: Desconhecido</span>
+      <button id="toggleBtn">Carregando...</button>
+      <span id="yoloBadge" class="badge off">YOLO: Desativado</span>
     </div>
     <div class="info-card">
-      <strong>Sistema:</strong> Monitoramento de via férrea com sensor PIR<br />
-      <strong>Modo:</strong> Controlado via MQTT<br />
-      <small>Use o servidor CCO para análise de IA e detecção de objetos.</small>
+      <strong>Endpoint YOLO:</strong>
+      <span id="yoloEndpoint">--</span>
+      <br />
+      <small>Integre este firmware a um servidor YOLO externo para inferência completa.</small>
     </div>
   </div>
   <script>
-    async function fetchStatus() {
+    let yoloState = false;
+    async function fetchYoloState() {
       try {
-        const res = await fetch('/status');
+        const res = await fetch('/api/yolo');
         const data = await res.json();
-        const badge = document.getElementById('statusBadge');
-        badge.textContent = 'Status: Online';
+        yoloState = !!data.enabled;
+        const endpoint = (data.endpoint || '').length ? data.endpoint : 'não configurado';
+        document.getElementById('yoloEndpoint').textContent = endpoint;
+        updateUI();
+      } catch (err) {
+        console.error('Falha ao obter estado do YOLO', err);
+      }
+    }
+    async function toggleYolo() {
+      try {
+        const target = !yoloState;
+        await fetch(`/api/yolo/toggle?enabled=${target}`, { method: 'POST' });
+        await fetchYoloState();
+      } catch (err) {
+        alert('Não foi possível alterar o estado do YOLO.');
+      }
+    }
+    function updateUI() {
+      const btn = document.getElementById('toggleBtn');
+      const badge = document.getElementById('yoloBadge');
+      if (yoloState) {
+        btn.textContent = 'Desativar YOLO';
+        badge.textContent = 'YOLO: Ativado';
         badge.classList.add('on');
         badge.classList.remove('off');
-      } catch (err) {
-        console.error('Falha ao obter status', err);
-        const badge = document.getElementById('statusBadge');
-        badge.textContent = 'Status: Offline';
+      } else {
+        btn.textContent = 'Ativar YOLO';
+        badge.textContent = 'YOLO: Desativado';
         badge.classList.add('off');
         badge.classList.remove('on');
       }
     }
+    document.getElementById('toggleBtn').addEventListener('click', toggleYolo);
     window.addEventListener('load', () => {
-      fetchStatus();
-      setInterval(fetchStatus, 10000);
+      fetchYoloState();
+      setInterval(fetchYoloState, 7000);
     });
   </script>
 </body>
@@ -161,6 +187,46 @@ static esp_err_t root_handler(httpd_req_t *req)
 {
   httpd_resp_set_type(req, "text/html");
   return httpd_resp_send(req, INDEX_HTML, HTTPD_RESP_USE_STRLEN);
+}
+
+static esp_err_t yolo_status_handler(httpd_req_t *req)
+{
+  String json = "{\"enabled\":";
+  json += yoloController.isEnabled() ? "true" : "false";
+  json += ",\"endpoint\":\"";
+  json += yoloController.getEndpoint();
+  json += "\"}";
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_send(req, json.c_str(), json.length());
+}
+
+static esp_err_t yolo_toggle_handler(httpd_req_t *req)
+{
+  const size_t query_len = httpd_req_get_url_query_len(req) + 1;
+  bool desired = !yoloController.isEnabled();
+
+  if (query_len > 1 && query_len < 64)
+  {
+    char query[64];
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK)
+    {
+      char value[16];
+      if (httpd_query_key_value(query, "enabled", value, sizeof(value)) == ESP_OK)
+      {
+        if (strcmp(value, "true") == 0 || strcmp(value, "1") == 0)
+        {
+          desired = true;
+        }
+        else if (strcmp(value, "false") == 0 || strcmp(value, "0") == 0)
+        {
+          desired = false;
+        }
+      }
+    }
+  }
+
+  yoloController.setEnabled(desired);
+  return yolo_status_handler(req);
 }
 
 static esp_err_t stream_handler(httpd_req_t *req)
@@ -207,7 +273,10 @@ static esp_err_t stream_handler(httpd_req_t *req)
 
     if (res == ESP_OK)
     {
-      // Enviar frame via HTTP stream
+      // Processar YOLO (rápido, não bloqueante)
+      yoloController.processFrame(fb);
+      
+      // Enviar frame via HTTP stream PRIMEIRO (prioridade)
       size_t hlen = (size_t)snprintf(part_buf, sizeof(part_buf), "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n", (unsigned int)_jpg_buf_len);
       res = httpd_resp_send_chunk(req, part_buf, hlen);
     }
@@ -301,6 +370,18 @@ void startCameraServer()
       .handler = status_handler,
       .user_ctx = nullptr};
 
+  httpd_uri_t yolo_state_uri = {
+      .uri = "/api/yolo",
+      .method = HTTP_GET,
+      .handler = yolo_status_handler,
+      .user_ctx = nullptr};
+
+  httpd_uri_t yolo_toggle_uri = {
+      .uri = "/api/yolo/toggle",
+      .method = HTTP_POST,
+      .handler = yolo_toggle_handler,
+      .user_ctx = nullptr};
+
   httpd_handle_t stream_httpd = nullptr;
 
   if (httpd_start(&stream_httpd, &config) == ESP_OK)
@@ -308,9 +389,13 @@ void startCameraServer()
     httpd_register_uri_handler(stream_httpd, &root_uri);
     httpd_register_uri_handler(stream_httpd, &stream_uri);
     httpd_register_uri_handler(stream_httpd, &status_uri);
+    httpd_register_uri_handler(stream_httpd, &yolo_state_uri);
+    httpd_register_uri_handler(stream_httpd, &yolo_toggle_uri);
     Serial.println("Rotas ativas:");
     Serial.println("  /stream  -> MJPEG ao vivo");
     Serial.println("  /status  -> informações da câmera");
+    Serial.println("  /api/yolo -> estado do YOLO");
+    Serial.println("  /api/yolo/toggle -> ativa/desativa YOLO");
     Serial.println("  /        -> painel web interativo");
   }
   else
