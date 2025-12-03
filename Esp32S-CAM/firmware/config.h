@@ -32,10 +32,14 @@
 const char *WIFI_SSID = "Server";
 const char *WIFI_PASS = "server123";
 
-// =================== Configuração de YOLO ===================
-// Caso possua um endpoint HTTP para inferência YOLO (por exemplo, um servidor Python),
-// informe abaixo. Caso contrário, deixe vazio para utilizar apenas o placeholder local.
-const char *YOLO_INFERENCE_ENDPOINT = "";
+// =================== Configuração do Sensor PIR ===================
+#define PIR_GPIO_PIN 13  // Pino GPIO onde o sensor PIR HC-SR501 está conectado
+
+// =================== Configurações de Modos de Operação ===================
+const unsigned long VIGILANCE_INTERVAL_MS = 5000;        // Intervalo entre frames no modo vigília (5 segundos)
+const unsigned long MOTION_DEBOUNCE_MS = 200;             // Debounce do sensor PIR (200ms)
+const unsigned long CAMERA_STABILIZATION_MS = 500;        // Tempo de estabilização da câmera após ligar (500ms)
+const unsigned long AUTO_MODE_COOLDOWN_MS = 2000;         // Tempo entre detecções no modo auto (2 segundos)
 
 // =================== Configuração MQTT (HiveMQ Cloud) ===================
 // PREENCHA COM SUAS CREDENCIAIS DO HIVEMQ CLOUD:
@@ -53,6 +57,9 @@ const char *MQTT_CLIENT_ID = "esp32cam_device_001";                  // ID únic
 const char *MQTT_TOPIC_FRAMES = "esp32cam/frames";            // Publica frames aqui
 const char *MQTT_TOPIC_STATUS = "esp32cam/status";            // Publica status aqui
 const char *MQTT_TOPIC_COMMANDS = "esp32cam/commands";         // Recebe comandos aqui
+const char *MQTT_TOPIC_MOTION = "esp32cam/motion";             // Notifica detecção de movimento
+const char *MQTT_TOPIC_MODE = "esp32cam/mode";                 // Publica modo atual
+const char *MQTT_TOPIC_DETECTIONS = "esp32cam/detections";     // Recebe resultados de detecção do servidor
 
 // Configurações de publicação
 const unsigned long MQTT_PUBLISH_INTERVAL = 2000;             // Publica a cada 2 segundos (0.5 FPS)
