@@ -22,7 +22,13 @@
 // Base64 (usado para enviar JPEG em JSON para o Gemini)
 #include "mbedtls/base64.h"
 
+// Deep Sleep
+#include "esp_sleep.h"
+
 // ==== Configurações de hardware ====
+
+// Sensor PIR (detecção de movimento)
+#define PIR_PIN 12
 
 // Pino do botão físico (ligado conforme esquema com pull-up externo)
 #define BUTTON_PIN 13
@@ -33,6 +39,9 @@
 #define LED_RED_PIN 14
 #define LED_GREEN_PIN 15
 
+// Flash LED da câmera (GPIO 4 na ESP32-CAM)
+#define FLASH_LED_PIN 4
+
 // ==== Configurações de rede ====
 
 // TODO: substitua pelas credenciais reais de Wi-Fi
@@ -42,11 +51,18 @@ const char* WIFI_PASSWORD = "server123";
 // ==== Configurações da API Gemini ====
 
 // TODO: substitua pela sua API key do Gemini
-const char* GEMINI_API_KEY = "AIzaSyAvVt5kIAlf1OOCzzd_Svz1yjgLNSj2oAg";
+const char* GEMINI_API_KEY = "sua-key-aqui";
 
 // Host e caminho do modelo Gemini 2.5 Flash-Lite
 const char* GEMINI_HOST = "generativelanguage.googleapis.com";
 const char* GEMINI_MODEL_PATH = "/v1beta/models/gemini-2.5-flash-lite:generateContent";
+
+// ==== Configurações da Plataforma Web (Vercel) ====
+// TODO: substitua pela URL da sua aplicação deployada na Vercel
+// Exemplo: "https://seu-app.vercel.app"
+const char* WEB_APP_HOST = "seu-app.vercel.app";  // Sem https://, será adicionado na função
+const char* WEB_APP_PATH = "/api/upload";
+const uint16_t WEB_APP_PORT = 443;  // HTTPS
 
 // ==== Servidor web interno (HTTP) ====
 
@@ -191,7 +207,16 @@ void connectWiFi() {
 // Captura uma imagem da câmera e retorna o frame buffer
 camera_fb_t* captureImage() {
   Serial.println("Capturando imagem...");
+  
+  // Ligar o flash LED antes de capturar
+  digitalWrite(FLASH_LED_PIN, HIGH);
+  delay(100); // Pequeno delay para o flash estabilizar
+  
   camera_fb_t* fb = esp_camera_fb_get();
+  
+  // Desligar o flash LED após capturar
+  digitalWrite(FLASH_LED_PIN, LOW);
+  
   if (!fb) {
     Serial.println("Falha na captura da câmera");
     return nullptr;
@@ -204,7 +229,8 @@ camera_fb_t* captureImage() {
 }
 
 // Envia a imagem para o Gemini 2.5 Flash-Lite usando JSON com inline_data base64
-bool sendImageToGemini(camera_fb_t* fb) {
+// Retorna true se sucesso, e personDetected será preenchido com a decisão
+bool sendImageToGemini(camera_fb_t* fb, bool* personDetected) {
   if (!fb) {
     Serial.println("Frame buffer nulo, não é possível enviar ao Gemini");
     return false;
@@ -300,14 +326,19 @@ bool sendImageToGemini(camera_fb_t* fb) {
 
   // Lógica simples: se contiver "no_person" => não há pessoa;
   // senão, se contiver "person" => há pessoa.
-  bool personDetected = false;
+  bool detected = false;
   if (response.indexOf("no_person") != -1) {
-    personDetected = false;
+    detected = false;
   } else if (response.indexOf("person") != -1) {
-    personDetected = true;
+    detected = true;
   }
 
-  if (personDetected) {
+  // Retornar a decisão através do parâmetro
+  if (personDetected != nullptr) {
+    *personDetected = detected;
+  }
+
+  if (detected) {
     Serial.println("Detecção: pessoa encontrada. Acendendo LED vermelho.");
     digitalWrite(LED_RED_PIN, HIGH);
     digitalWrite(LED_GREEN_PIN, LOW);
@@ -324,26 +355,174 @@ bool sendImageToGemini(camera_fb_t* fb) {
     lastImageLen = 0;
   }
 
-  lastImage = (uint8_t*)malloc(fb->len);
-  if (lastImage) {
-    memcpy(lastImage, fb->buf, fb->len);
-    lastImageLen = fb->len;
-    lastDecision = personDetected ? "person" : "no_person";
-    Serial.println("Última imagem e decisão armazenadas para visualização web.");
-  } else {
-    Serial.println("Falha ao alocar memória para armazenar última imagem.");
-  }
+    lastImage = (uint8_t*)malloc(fb->len);
+    if (lastImage) {
+      memcpy(lastImage, fb->buf, fb->len);
+      lastImageLen = fb->len;
+      lastDecision = detected ? "person" : "no_person";
+      Serial.println("Última imagem e decisão armazenadas para visualização web.");
+    } else {
+      Serial.println("Falha ao alocar memória para armazenar última imagem.");
+    }
 
   client.stop();
   return true;
 }
 
-// ==== Variáveis do botão (debounce) ====
+// Envia a imagem e decisão para a plataforma web (Vercel)
+bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
+  if (!fb) {
+    Serial.println("Frame buffer nulo, não é possível enviar para a plataforma web");
+    return false;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi desconectado, tentando reconectar...");
+    connectWiFi();
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("Ainda sem Wi-Fi. Abortando envio para plataforma web.");
+      return false;
+    }
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure(); // Para MVP: desabilita verificação de certificado
+
+  Serial.print("Conectando a ");
+  Serial.print(WEB_APP_HOST);
+  Serial.println("...");
+
+  if (!client.connect(WEB_APP_HOST, WEB_APP_PORT)) {
+    Serial.println("Falha ao conectar ao servidor web");
+    return false;
+  }
+
+  // Codificar o JPEG em base64
+  size_t encoded_len = 0;
+  size_t max_encoded_len = (fb->len * 4) / 3 + 4;
+  unsigned char* encoded = (unsigned char*)malloc(max_encoded_len);
+  if (!encoded) {
+    Serial.println("Falha ao alocar memória para base64");
+    return false;
+  }
+
+  int res = mbedtls_base64_encode(encoded, max_encoded_len, &encoded_len, fb->buf, fb->len);
+  if (res != 0) {
+    Serial.print("Erro ao codificar base64, código: ");
+    Serial.println(res);
+    free(encoded);
+    return false;
+  }
+
+  String base64Data = String((char*)encoded);
+  free(encoded);
+
+  // Montar o payload JSON
+  String decision = personDetected ? "person" : "no_person";
+  String payload = "{";
+  payload += "\"image\":\"data:image/jpeg;base64," + base64Data + "\",";
+  payload += "\"decision\":\"" + decision + "\"";
+  payload += "}";
+
+  // Cabeçalhos HTTP
+  String request = String("POST ") + String(WEB_APP_PATH) + " HTTP/1.1\r\n" +
+                   "Host: " + String(WEB_APP_HOST) + "\r\n" +
+                   "Content-Type: application/json\r\n" +
+                   "Content-Length: " + String(payload.length()) + "\r\n" +
+                   "Connection: close\r\n\r\n";
+
+  Serial.println("Enviando imagem para plataforma web...");
+  client.print(request);
+  client.print(payload);
+
+  // Ler resposta
+  unsigned long timeout = millis();
+  while (client.connected() && !client.available()) {
+    if (millis() - timeout > 10000) {
+      Serial.println("Timeout aguardando resposta da plataforma web");
+      client.stop();
+      return false;
+    }
+    delay(10);
+  }
+
+  // Ler resposta (primeiras linhas)
+  String response = "";
+  int lineCount = 0;
+  while (client.available() && lineCount < 10) {
+    String line = client.readStringUntil('\n');
+    response += line + "\n";
+    lineCount++;
+  }
+
+  Serial.println("Resposta da plataforma web:");
+  Serial.println(response);
+
+  client.stop();
+  return true;
+}
+
+// ==== Variáveis do botão e PIR (debounce) ====
 
 int buttonState = HIGH;
 int lastButtonReading = HIGH;
 unsigned long lastDebounceTime = 0;
 const unsigned long debounceDelay = 50; // ms
+
+int pirState = LOW;
+int lastPirReading = LOW;
+unsigned long lastPirDebounceTime = 0;
+const unsigned long pirDebounceDelay = 100; // ms (PIR precisa de mais tempo)
+
+// Função para processar captura e envio (usada tanto por botão quanto PIR)
+void processCaptureAndSend() {
+  Serial.println("Iniciando captura e envio ao Gemini...");
+
+  camera_fb_t* fb = captureImage();
+  if (fb) {
+    bool personDetected = false;
+    bool ok = sendImageToGemini(fb, &personDetected);
+    if (ok) {
+      Serial.println("Envio ao Gemini concluído.");
+      
+      // Enviar também para a plataforma web
+      Serial.println("Enviando imagem para plataforma web...");
+      bool webOk = sendImageToWebApp(fb, personDetected);
+      if (webOk) {
+        Serial.println("Envio para plataforma web concluído.");
+      } else {
+        Serial.println("Falha no envio para plataforma web.");
+      }
+    } else {
+      Serial.println("Falha no envio ao Gemini.");
+    }
+
+    // Liberar frame buffer para evitar vazamento de memória
+    esp_camera_fb_return(fb);
+  }
+
+  // Aguardar um pouco antes de entrar em deep sleep
+  delay(2000);
+  
+  // Entrar em deep sleep
+  Serial.println("Entrando em modo deep sleep...");
+  Serial.println("PIR (GPIO 12) e Botão (GPIO 13) permanecem ativos e acordarão o sistema.");
+  Serial.println("Ambos acionarão captura e envio ao Gemini automaticamente ao acordar.");
+  
+  // Configurar wake-up sources usando EXT1 para permitir múltiplos pinos
+  // PIR (GPIO 12): acorda quando detecta movimento (HIGH)
+  // Botão (GPIO 13): será verificado manualmente no setup (LOW quando pressionado)
+  // Usamos ANY_HIGH para detectar quando o PIR está HIGH
+  uint64_t wakeup_pin_mask = ((uint64_t)1 << PIR_PIN);
+  esp_sleep_enable_ext1_wakeup(wakeup_pin_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
+  
+  // Nota: O botão (GPIO 13) é LOW quando pressionado, então será verificado manualmente
+  // no setup após acordar, já que EXT1 não pode detectar LOW diretamente com ANY_HIGH
+  // Quando detectado, também processará captura automaticamente
+  
+  // Entrar em deep sleep
+  esp_deep_sleep_start();
+}
 
 void setup() {
 
@@ -354,14 +533,65 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
+  // Verificar se acordou do deep sleep
+  esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
+  
+  // Verificar qual GPIO acordou o sistema
+  bool wokeByPIR = false;
+  bool wokeByButton = false;
+  
+  if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
+    // Acordou pelo EXT0 (PIR no GPIO 12)
+    wokeByPIR = true;
+    Serial.println("Acordou pelo sensor PIR (GPIO 12) - movimento detectado!");
+  } else if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT1) {
+    // Verificar qual pino do EXT1 acordou
+    uint64_t wakeup_pin = esp_sleep_get_ext1_wakeup_status();
+    if (wakeup_pin & ((uint64_t)1 << PIR_PIN)) {
+      wokeByPIR = true;
+      Serial.println("Acordou pelo sensor PIR (GPIO 12) - movimento detectado!");
+    }
+    if (wakeup_pin & ((uint64_t)1 << BUTTON_PIN)) {
+      wokeByButton = true;
+      Serial.println("Acordou pelo botão (GPIO 13)!");
+    }
+  } else {
+    Serial.println("Inicialização normal (não foi deep sleep)");
+  }
+
+  // Inicializa sensor PIR
+  // O PIR deve estar configurado como RTC GPIO para funcionar no deep sleep
+  pinMode(PIR_PIN, INPUT);
+  rtc_gpio_init((gpio_num_t)PIR_PIN);
+  rtc_gpio_set_direction((gpio_num_t)PIR_PIN, RTC_GPIO_MODE_INPUT_ONLY);
+  rtc_gpio_pulldown_dis((gpio_num_t)PIR_PIN);
+  rtc_gpio_pullup_dis((gpio_num_t)PIR_PIN);
+
   // Inicializa botão (pull-up externo conforme esquema do DroneBot)
+  // O botão também é RTC GPIO e pode acordar do deep sleep
   pinMode(BUTTON_PIN, INPUT);
+  rtc_gpio_init((gpio_num_t)BUTTON_PIN);
+  rtc_gpio_set_direction((gpio_num_t)BUTTON_PIN, RTC_GPIO_MODE_INPUT_ONLY);
+  rtc_gpio_pulldown_dis((gpio_num_t)BUTTON_PIN);
+  rtc_gpio_pullup_dis((gpio_num_t)BUTTON_PIN); // Pull-up externo conforme esquema
+
+  // Verificar manualmente o botão após inicializar os pinos
+  // Isso é necessário porque o botão é LOW quando pressionado e pode não ser detectado pelo EXT1
+  delay(50); // Pequeno delay para estabilização
+  if (digitalRead(BUTTON_PIN) == LOW && !wokeByPIR && wakeup_reason != ESP_SLEEP_WAKEUP_UNDEFINED) {
+    wokeByButton = true;
+    Serial.println("Botão detectado pressionado ao acordar!");
+  }
 
   // Inicializa LEDs de indicação
   pinMode(LED_RED_PIN, OUTPUT);
   pinMode(LED_GREEN_PIN, OUTPUT);
   digitalWrite(LED_RED_PIN, LOW);
   digitalWrite(LED_GREEN_PIN, LOW);
+
+  // Inicializa flash LED da câmera
+  pinMode(FLASH_LED_PIN, OUTPUT);
+  digitalWrite(FLASH_LED_PIN, LOW);
 
   // Initialize the camera
   Serial.print("Initializing the camera module...");
@@ -376,10 +606,25 @@ void setup() {
   Serial.print("Servidor web iniciado. Acesse: http://");
   Serial.println(WiFi.localIP());
 
+  // Se acordou pelo PIR ou pelo botão, processar imediatamente
+  if (wokeByPIR) {
+    delay(500); // Pequeno delay para estabilização após acordar
+    Serial.println("Processando captura acionada pelo PIR...");
+    processCaptureAndSend();
+  } else if (wokeByButton) {
+    // Se acordou pelo botão, também processa automaticamente
+    delay(500); // Pequeno delay para estabilização após acordar
+    Serial.println("Processando captura acionada pelo botão...");
+    processCaptureAndSend();
+  } else {
+    Serial.println("Sistema pronto. Botão (GPIO 13) e PIR (GPIO 12) podem acordar do deep sleep e tirar foto automaticamente.");
+  }
+
 }
 
 void loop() {
 
+  // --- Verificar botão ---
   int reading = digitalRead(BUTTON_PIN);
 
   if (reading != lastButtonReading) {
@@ -392,25 +637,34 @@ void loop() {
 
       // Botão pressionado (considerando botão para GND com INPUT_PULLUP)
       if (buttonState == LOW) {
-        Serial.println("Botão pressionado: iniciando captura e envio ao Gemini...");
-
-        camera_fb_t* fb = captureImage();
-        if (fb) {
-          bool ok = sendImageToGemini(fb);
-          if (ok) {
-            Serial.println("Envio ao Gemini concluído.");
-          } else {
-            Serial.println("Falha no envio ao Gemini.");
-          }
-
-          // Liberar frame buffer para evitar vazamento de memória
-          esp_camera_fb_return(fb);
-        }
+        Serial.println("Botão pressionado!");
+        processCaptureAndSend();
       }
     }
   }
 
   lastButtonReading = reading;
+
+  // --- Verificar sensor PIR ---
+  int pirReading = digitalRead(PIR_PIN);
+
+  if (pirReading != lastPirReading) {
+    lastPirDebounceTime = millis();
+  }
+
+  if ((millis() - lastPirDebounceTime) > pirDebounceDelay) {
+    if (pirReading != pirState) {
+      pirState = pirReading;
+
+      // PIR detectou movimento (HIGH = movimento detectado)
+      if (pirState == HIGH) {
+        Serial.println("Movimento detectado pelo PIR!");
+        processCaptureAndSend();
+      }
+    }
+  }
+
+  lastPirReading = pirReading;
 
   // Pequeno delay para reduzir ruído de leitura
   delay(10);
@@ -463,7 +717,7 @@ void loop() {
         webClient.print(millis());
         webClient.println("' style='max-width:100%;height:auto;' />");
       } else {
-        webClient.println("<p>Nenhuma imagem disponível ainda. Pressione o botão para capturar.</p>");
+        webClient.println("<p>Nenhuma imagem disponível ainda. Pressione o botão ou aguarde detecção do PIR.</p>");
       }
 
       webClient.println("</body></html>");
