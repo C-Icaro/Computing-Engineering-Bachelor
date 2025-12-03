@@ -6,8 +6,8 @@
 #include <ArduinoJson.h>
 #include "config.h"
 #include "utils.h"
+#include "YoloController.h"
 #include "esp_camera.h"
-#include "OperationMode.h"
 
 // Tentar incluir WiFiClientSecure, se não estiver disponível usar WiFiClient
 #ifdef ESP32
@@ -17,14 +17,8 @@
   typedef WiFiClient WiFiClientSecure;
 #endif
 
-// Forward declarations
-class OperationModeController;
-
-// Callback externo para mudança de modo (definido em firmware.ino)
-extern void onModeChangedCallback(OperationMode newMode);
-
-// Callback externo para status do PIR (definido em firmware.ino)
-extern void onPIRStatusRequestedCallback();
+// Declaração externa da instância global (definida em firmware.ino)
+extern YoloController yoloController;
 
 class MQTTPublisher
 {
@@ -82,12 +76,22 @@ public:
     client.loop();
   }
 
-  bool publishFrame(camera_fb_t *fb, const String &mode = "", bool motionTriggered = false)
+  bool publishFrame(camera_fb_t *fb)
   {
     if (!mqttEnabled || !client.connected() || fb == nullptr)
     {
       return false;
     }
+
+    static unsigned long lastPublish = 0;
+    unsigned long now = millis();
+
+    if (now - lastPublish < MQTT_PUBLISH_INTERVAL)
+    {
+      return false; // Ainda não passou o intervalo
+    }
+
+    lastPublish = now;
 
     // Verificar se o frame é muito grande
     if (fb->len > MQTT_MAX_FRAME_SIZE)
@@ -105,7 +109,7 @@ public:
     }
 
     // Processar frame diretamente na RAM
-    return publishFrameDirect(fb, mode, motionTriggered);
+    return publishFrameDirect(fb);
   }
 
   void publishStatus(const String &status)
@@ -126,59 +130,6 @@ public:
     client.publish(MQTT_TOPIC_STATUS, jsonPayload.c_str());
   }
 
-  void publishMotionDetected()
-  {
-    if (!mqttEnabled || !client.connected())
-    {
-      return;
-    }
-
-    DynamicJsonDocument doc(256);
-    doc["device_id"] = MQTT_CLIENT_ID;
-    doc["timestamp"] = millis();
-    doc["motion_detected"] = true;
-
-    String jsonPayload;
-    serializeJson(doc, jsonPayload);
-    client.publish(MQTT_TOPIC_MOTION, jsonPayload.c_str());
-    Serial.println("[MQTT] Notificação de movimento publicada");
-  }
-
-  void publishMode(const String &mode)
-  {
-    if (!mqttEnabled || !client.connected())
-    {
-      return;
-    }
-
-    DynamicJsonDocument doc(256);
-    doc["device_id"] = MQTT_CLIENT_ID;
-    doc["timestamp"] = millis();
-    doc["mode"] = mode;
-
-    String jsonPayload;
-    serializeJson(doc, jsonPayload);
-    client.publish(MQTT_TOPIC_MODE, jsonPayload.c_str());
-    Serial.printf("[MQTT] Modo publicado: %s\n", mode.c_str());
-  }
-
-
-  // Callback para captura manual (será chamado externamente)
-  void requestManualCapture()
-  {
-    manualCaptureRequested = true;
-  }
-
-  bool isManualCaptureRequested()
-  {
-    if (manualCaptureRequested)
-    {
-      manualCaptureRequested = false; // Reset flag após ler
-      return true;
-    }
-    return false;
-  }
-
   bool isConnected()
   {
     return client.connected();
@@ -195,26 +146,18 @@ public:
 
 private:
   // Método para processamento direto na RAM
-  bool publishFrameDirect(camera_fb_t *fb, const String &mode, bool motionTriggered) {
+  bool publishFrameDirect(camera_fb_t *fb) {
     size_t base64Size = ((fb->len + 2) / 3) * 4;
-    size_t jsonSize = base64Size + 300;
+    size_t jsonSize = base64Size + 200;
     
     DynamicJsonDocument doc(jsonSize);
-    doc["device_id"] = MQTT_CLIENT_ID;
-    doc["frame_id"] = frameCounter++;
     doc["timestamp"] = millis();
+    doc["frame_id"] = frameCounter++;
     doc["format"] = "jpeg";
     doc["width"] = fb->width;
     doc["height"] = fb->height;
     doc["size"] = fb->len;
     doc["quality"] = MQTT_JPEG_QUALITY;
-    
-    if (mode.length() > 0)
-    {
-      doc["mode"] = mode;
-    }
-    
-    doc["motion_triggered"] = motionTriggered;
 
     String base64Frame;
     base64EncodeChunk(fb->buf, fb->len, base64Frame);
@@ -226,28 +169,11 @@ private:
     bool result = client.publish(MQTT_TOPIC_FRAMES, jsonPayload.c_str());
     
     if (result) {
-      Serial.printf("[MQTT] ✓ Frame publicado: JPEG=%u, JSON=%u bytes, Mode=%s, Motion=%s\n", 
-                    fb->len, jsonPayload.length(), mode.c_str(), motionTriggered ? "true" : "false");
+      Serial.printf("[MQTT] ✓ Frame publicado (direto): JPEG=%u, JSON=%u bytes\n", 
+                    fb->len, jsonPayload.length());
     }
 
     return result;
-  }
-
-  String modeToString(OperationMode mode) const
-  {
-    switch (mode)
-    {
-      case OperationMode::HIBERNATION:
-        return "hibernation";
-      case OperationMode::AUTO:
-        return "auto";
-      case OperationMode::MANUAL:
-        return "manual";
-      case OperationMode::VIGILANCE:
-        return "vigilance";
-      default:
-        return "unknown";
-    }
   }
 
   WiFiClientSecure espClient;  // Deve vir antes de client
@@ -255,7 +181,6 @@ private:
   unsigned long lastReconnectAttempt = 0;
   const unsigned long RECONNECT_INTERVAL = 10000; // 10 segundos
   uint32_t frameCounter = 0;
-  bool manualCaptureRequested = false; // Flag para captura manual
 
   void onMessage(char *topic, byte *payload, unsigned int length)
   {
@@ -288,21 +213,11 @@ private:
     {
       String action = doc["action"].as<String>();
 
-      if (action == "set_mode")
+      if (action == "toggle_yolo")
       {
-        if (doc.containsKey("mode"))
-        {
-          String modeStr = doc["mode"].as<String>();
-          OperationMode newMode = OperationModeController::stringToMode(modeStr);
-          // Chamar callback externo para mudar o modo
-          onModeChangedCallback(newMode);
-          Serial.printf("[MQTT] Comando de mudança de modo recebido: %s\n", modeStr.c_str());
-        }
-      }
-      else if (action == "capture")
-      {
-        requestManualCapture();
-        Serial.println("[MQTT] Comando de captura manual recebido");
+        bool enabled = doc.containsKey("enabled") ? doc["enabled"].as<bool>() : !yoloController.isEnabled();
+        yoloController.setEnabled(enabled);
+        Serial.printf("[MQTT] YOLO %s via comando remoto\n", enabled ? "ativado" : "desativado");
       }
       else if (action == "toggle_mqtt")
       {
@@ -315,12 +230,6 @@ private:
         Serial.println("[MQTT] Reiniciando ESP32 via comando remoto...");
         delay(1000);
         ESP.restart();
-      }
-      else if (action == "pir_status")
-      {
-        // Chamar callback externo para imprimir status do PIR
-        onPIRStatusRequestedCallback();
-        Serial.println("[MQTT] Comando de status do PIR recebido");
       }
     }
   }

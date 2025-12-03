@@ -8,15 +8,8 @@
 class CameraController
 {
 public:
-  CameraController() : initialized(false) {}
-
   bool begin()
   {
-    if (initialized)
-    {
-      return true; // Já inicializada
-    }
-
     camera_config_t config;
     config.ledc_channel = LEDC_CHANNEL_0;
     config.ledc_timer = LEDC_TIMER_0;
@@ -62,48 +55,7 @@ public:
     }
 
     applyDefaultTuning();
-    initialized = true;
     return true;
-  }
-
-  bool isInitialized() const
-  {
-    return initialized;
-  }
-
-  void powerOn()
-  {
-    // PWDN = LOW ativa a câmera
-    pinMode(PWDN_GPIO_NUM, OUTPUT);
-    digitalWrite(PWDN_GPIO_NUM, LOW);
-    delay(CAMERA_STABILIZATION_MS);
-    Serial.println("[Camera] Câmera ligada");
-  }
-
-  void powerOff()
-  {
-    // PWDN = HIGH desativa a câmera
-    pinMode(PWDN_GPIO_NUM, OUTPUT);
-    digitalWrite(PWDN_GPIO_NUM, HIGH);
-    delay(50);
-    Serial.println("[Camera] Câmera desligada");
-  }
-
-  camera_fb_t* captureFrame()
-  {
-    if (!initialized)
-    {
-      return nullptr;
-    }
-    return esp_camera_fb_get();
-  }
-
-  void returnFrame(camera_fb_t* fb)
-  {
-    if (fb != nullptr)
-    {
-      esp_camera_fb_return(fb);
-    }
   }
 
   sensor_t *getSensor()
@@ -143,9 +95,6 @@ public:
     sensor->set_dcw(sensor, 1);
     sensor->set_colorbar(sensor, 0);
   }
-
-private:
-  bool initialized;
 };
 
 #endif // CAMERA_CONTROLLER_H
