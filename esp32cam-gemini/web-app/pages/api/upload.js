@@ -1,5 +1,5 @@
 // API route para receber imagens da ESP32-CAM
-import { setLatestImage } from './latest';
+import { setLatestImage } from './store';
 
 // Configurar limite de tamanho do body para 10MB
 export const config = {
