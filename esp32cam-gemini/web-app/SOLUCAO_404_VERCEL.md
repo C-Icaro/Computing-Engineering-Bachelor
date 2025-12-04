@@ -111,3 +111,4 @@ Após seguir estes passos:
 - ✅ `/api/latest` deve retornar: `null` (se não houver imagem) ou dados da imagem
 - ✅ `/api/upload` deve aceitar POST com imagem
 
+

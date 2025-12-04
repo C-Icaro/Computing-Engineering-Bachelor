@@ -103,3 +103,4 @@ Se necessário, adicione mais logs no código da ESP32 para debug:
 
 Com essas informações, poderemos identificar exatamente onde está o problema.
 
+

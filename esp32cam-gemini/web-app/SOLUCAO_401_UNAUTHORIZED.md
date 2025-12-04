@@ -92,3 +92,4 @@ Se você desabilitar a proteção por senha, qualquer pessoa com a URL poderá a
 - Usar rate limiting
 - Restringir acesso por IP (se possível)
 
+

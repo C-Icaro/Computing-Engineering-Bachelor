@@ -49,6 +49,20 @@ export default function Home() {
     return { color: '#6b7280', text: 'Desconhecido', icon: '⚪' };
   };
 
+  const getBatteryColor = (percentage) => {
+    if (percentage >= 80) return '#22c55e'; // Verde - Alta
+    if (percentage >= 50) return '#f59e0b'; // Amarelo - Média
+    if (percentage >= 20) return '#f97316'; // Laranja - Baixa
+    return '#ef4444'; // Vermelho - Crítica
+  };
+
+  const getBatteryStatus = (percentage) => {
+    if (percentage >= 80) return 'Alta';
+    if (percentage >= 50) return 'Média';
+    if (percentage >= 20) return 'Baixa';
+    return 'Crítica';
+  };
+
   const decisionInfo = latestImage ? getDecisionColor(latestImage.decision) : null;
 
   return (
@@ -106,6 +120,17 @@ export default function Home() {
                   {decisionInfo.icon} {decisionInfo.text}
                 </span>
               </div>
+              {latestImage.battery && (
+                <div style={styles.infoItem}>
+                  <span style={styles.infoLabel}>Bateria:</span>
+                  <span style={{
+                    ...styles.batteryBadge,
+                    backgroundColor: getBatteryColor(latestImage.battery.percentage)
+                  }}>
+                    🔋 {latestImage.battery.percentage}% ({latestImage.battery.voltage.toFixed(2)}V) - {getBatteryStatus(latestImage.battery.percentage)}
+                  </span>
+                </div>
+              )}
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>Capturada em:</span>
                 <span style={styles.timestamp}>
@@ -247,6 +272,13 @@ const styles = {
     fontSize: '0.9rem',
     color: '#374151',
     fontWeight: '500',
+  },
+  batteryBadge: {
+    padding: '6px 12px',
+    borderRadius: '20px',
+    color: 'white',
+    fontSize: '0.9rem',
+    fontWeight: '600',
   },
   imageWrapper: {
     width: '100%',

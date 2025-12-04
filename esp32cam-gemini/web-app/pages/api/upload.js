@@ -35,6 +35,7 @@ export default async function handler(req, res) {
     // A imagem vem como base64 ou como buffer
     let imageData;
     let decision = req.body.decision || 'unknown';
+    let battery = req.body.battery || null; // Dados de bateria (voltage e percentage)
 
     if (typeof req.body.image === 'string') {
       // Se for base64, manter como string
@@ -53,7 +54,8 @@ export default async function handler(req, res) {
       filename,
       decision,
       imageUrl: imageData,
-      timestamp
+      timestamp,
+      battery // Incluir dados de bateria
     };
 
     // Armazenar como última imagem
@@ -62,7 +64,8 @@ export default async function handler(req, res) {
     console.log('Imagem processada com sucesso:', {
       filename: imageDataObj.filename,
       decision: imageDataObj.decision,
-      timestamp: imageDataObj.timestamp
+      timestamp: imageDataObj.timestamp,
+      battery: imageDataObj.battery
     });
 
     // Retornar sucesso
