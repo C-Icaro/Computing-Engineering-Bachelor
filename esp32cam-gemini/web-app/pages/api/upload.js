@@ -11,6 +11,15 @@ export const config = {
 }
 
 export default async function handler(req, res) {
+  // Log para debug
+  console.log('API /api/upload chamada:', {
+    method: req.method,
+    hasBody: !!req.body,
+    hasImage: !!(req.body && req.body.image),
+    imageType: req.body?.image ? typeof req.body.image : 'none',
+    imageLength: req.body?.image ? (typeof req.body.image === 'string' ? req.body.image.length : 'buffer') : 0
+  });
+
   // Apenas aceitar POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -19,6 +28,7 @@ export default async function handler(req, res) {
   try {
     // Verificar se há imagem no body
     if (!req.body || !req.body.image) {
+      console.log('Erro: No image provided', { body: req.body });
       return res.status(400).json({ error: 'No image provided' });
     }
 
@@ -49,6 +59,12 @@ export default async function handler(req, res) {
     // Armazenar como última imagem
     setLatestImage(imageDataObj);
 
+    console.log('Imagem processada com sucesso:', {
+      filename: imageDataObj.filename,
+      decision: imageDataObj.decision,
+      timestamp: imageDataObj.timestamp
+    });
+
     // Retornar sucesso
     return res.status(200).json({
       success: true,
@@ -57,7 +73,8 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Error processing image:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('Error stack:', error.stack);
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 }
 
