@@ -1,6 +1,15 @@
 // API route para receber imagens da ESP32-CAM
 import { setLatestImage } from './latest';
 
+// Configurar limite de tamanho do body para 10MB
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+}
+
 export default async function handler(req, res) {
   // Apenas aceitar POST
   if (req.method !== 'POST') {
