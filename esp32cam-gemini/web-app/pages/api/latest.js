@@ -4,6 +4,12 @@ import { getLatestImage } from './store';
 export default function handler(req, res) {
   if (req.method === 'GET') {
     const latestImage = getLatestImage();
+    console.log('API /api/latest chamada:', {
+      hasImage: !!latestImage,
+      imageFilename: latestImage?.filename,
+      imageTimestamp: latestImage?.timestamp
+    });
+    
     if (!latestImage) {
       // Retornar 200 com null para que a rota seja reconhecida
       return res.status(200).json(null);
