@@ -27,3 +27,4 @@ void base64EncodeChunk(const uint8_t* data, size_t length, String& result) {
 #endif // UTILS_H
 
 
+
