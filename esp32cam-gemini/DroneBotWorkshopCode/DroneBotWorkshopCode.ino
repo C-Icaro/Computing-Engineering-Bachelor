@@ -536,6 +536,12 @@ bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
   float batteryVoltage = readBatteryVoltage();
   int batteryPercentage = calculateBatteryPercentage(batteryVoltage);
   
+  Serial.print("Dados de bateria: ");
+  Serial.print(batteryVoltage, 3);
+  Serial.print("V, ");
+  Serial.print(batteryPercentage);
+  Serial.println("%");
+  
   // Montar o payload JSON
   String decision = personDetected ? "person" : "no_person";
   String payload = "{";
@@ -547,6 +553,10 @@ bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
   payload += "}";
   payload += "}";
 
+  Serial.print("Tamanho do payload: ");
+  Serial.print(payload.length());
+  Serial.println(" bytes");
+
   // Cabeçalhos HTTP
   String request = String("POST ") + String(WEB_APP_PATH) + " HTTP/1.1\r\n" +
                    "Host: " + String(WEB_APP_HOST) + "\r\n" +
@@ -555,34 +565,92 @@ bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
                    "Connection: close\r\n\r\n";
 
   Serial.println("Enviando imagem para plataforma web...");
-  client.print(request);
-  client.print(payload);
+  Serial.print("Host: ");
+  Serial.println(WEB_APP_HOST);
+  Serial.print("Path: ");
+  Serial.println(WEB_APP_PATH);
+  
+  // Enviar requisição
+  size_t requestLen = client.print(request);
+  size_t payloadLen = client.print(payload);
+  
+  Serial.print("Bytes enviados - Request: ");
+  Serial.print(requestLen);
+  Serial.print(", Payload: ");
+  Serial.println(payloadLen);
 
-  // Ler resposta
+  // Aguardar resposta
   unsigned long timeout = millis();
   while (client.connected() && !client.available()) {
-    if (millis() - timeout > 10000) {
-      Serial.println("Timeout aguardando resposta da plataforma web");
+    if (millis() - timeout > 15000) {
+      Serial.println("ERRO: Timeout aguardando resposta da plataforma web (15s)");
       client.stop();
       return false;
     }
     delay(10);
   }
 
-  // Ler resposta (primeiras linhas)
+  // Ler resposta completa
   String response = "";
-  int lineCount = 0;
-  while (client.available() && lineCount < 10) {
-    String line = client.readStringUntil('\n');
-    response += line + "\n";
-    lineCount++;
+  String statusLine = "";
+  int httpCode = 0;
+  bool firstLine = true;
+  
+  unsigned long responseTimeout = millis();
+  while (client.available() || client.connected()) {
+    if (millis() - responseTimeout > 5000) {
+      Serial.println("AVISO: Timeout lendo resposta completa");
+      break;
+    }
+    
+    if (client.available()) {
+      String line = client.readStringUntil('\n');
+      response += line + "\n";
+      
+      if (firstLine) {
+        statusLine = line;
+        // Extrair código HTTP (ex: "HTTP/1.1 200 OK")
+        int spaceIndex = line.indexOf(' ');
+        if (spaceIndex > 0) {
+          int codeIndex = spaceIndex + 1;
+          int codeEndIndex = line.indexOf(' ', codeIndex);
+          if (codeEndIndex > 0) {
+            httpCode = line.substring(codeIndex, codeEndIndex).toInt();
+          }
+        }
+        firstLine = false;
+      }
+      
+      // Limitar tamanho da resposta para não sobrecarregar
+      if (response.length() > 2000) {
+        response += "... (truncado)";
+        break;
+      }
+    } else {
+      delay(10);
+    }
   }
 
-  Serial.println("Resposta da plataforma web:");
+  Serial.println("=== Resposta da plataforma web ===");
+  Serial.print("Status: ");
+  Serial.println(statusLine);
+  Serial.print("Código HTTP: ");
+  Serial.println(httpCode);
+  Serial.println("Resposta completa:");
   Serial.println(response);
+  Serial.println("===================================");
 
   client.stop();
-  return true;
+  
+  // Verificar se foi sucesso
+  if (httpCode >= 200 && httpCode < 300) {
+    Serial.println("✓ Envio bem-sucedido!");
+    return true;
+  } else {
+    Serial.print("✗ Erro no envio. Código HTTP: ");
+    Serial.println(httpCode);
+    return false;
+  }
 }
 
 // ==== Variáveis do botão e PIR (debounce) ====
