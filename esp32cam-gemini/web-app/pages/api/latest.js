@@ -5,7 +5,8 @@ let latestImage = null;
 export default function handler(req, res) {
   if (req.method === 'GET') {
     if (!latestImage) {
-      return res.status(404).json({ error: 'No image available' });
+      // Retornar 200 com null para que a rota seja reconhecida
+      return res.status(200).json(null);
     }
     return res.status(200).json(latestImage);
   } else if (req.method === 'POST') {

@@ -13,8 +13,12 @@ export default function Home() {
       const response = await fetch('/api/latest');
       if (response.ok) {
         const data = await response.json();
-        setLatestImage(data);
-        setError(null);
+        if (data) {
+          setLatestImage(data);
+          setError(null);
+        } else {
+          setError('Nenhuma imagem disponível ainda');
+        }
       } else {
         setError('Nenhuma imagem disponível ainda');
       }
