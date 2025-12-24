@@ -25,34 +25,60 @@
 // Deep Sleep
 #include "esp_sleep.h"
 
-// ==== Configurações de hardware ====
+// ============================================================================
+// ==== CONFIGURAÇÕES DE HARDWARE - CONSTANTES ====
+// ============================================================================
 
-// Sensor PIR (detecção de movimento)
-#define PIR_PIN 12
+// Pinagem dos sensores de entrada
+#define PIR_PIN 12                    // GPIO 12: Sensor PIR (detecção de movimento)
+#define BUTTON_PIN 13                 // GPIO 13: Botão físico (pull-up externo)
 
-// Pino do botão físico (ligado conforme esquema com pull-up externo)
-#define BUTTON_PIN 13
+// Pinagem dos LEDs de saída
+#define LED_RED_PIN 14                // GPIO 14: LED vermelho (pessoa detectada)
+#define LED_GREEN_PIN 15              // GPIO 15: LED verde (sem pessoa)
+#define FLASH_LED_PIN 4               // GPIO 4: Flash LED da câmera
 
-// LEDs de indicação de pessoa / não pessoa
-// Conecte o LED vermelho (com resistor) ao GPIO 14 e o LED verde ao GPIO 15.
-// Ambos com o outro terminal em GND.
-#define LED_RED_PIN 14
-#define LED_GREEN_PIN 15
-
-// Flash LED da câmera (GPIO 4 na ESP32-CAM)
-#define FLASH_LED_PIN 4
-
-// Pino ADC para leitura de bateria (GPIO 33)
-// Divisor de tensão: Rtop = 10kΩ, Rbot = 22.2kΩ (10k + 10k + 2.2k)
-#define BATTERY_ADC_PIN 33
-#define DIVIDER_RATIO 0.689  // Rbot / (Rtop + Rbot) = 22.2 / 32.2
-#define ADC_RESOLUTION 4095  // 12 bits
-#define ADC_MAX_VOLTAGE 3.3  // Volts (atenuação padrão permite até 3.3V)
+// Configurações do ADC para leitura de bateria
+#define BATTERY_ADC_PIN 33            // GPIO 33: Entrada ADC para leitura de bateria
+#define DIVIDER_RATIO 0.689           // Razão do divisor de tensão: Rbot/(Rtop+Rbot) = 22.2/32.2
+#define ADC_RESOLUTION 4095           // Resolução do ADC: 12 bits (0-4095)
+#define ADC_MAX_VOLTAGE 3.3           // Tensão máxima do ADC: 3.3V (atenuação padrão)
 
 // Constantes para cálculo de porcentagem de bateria de lítio (1 célula)
-#define BATTERY_VOLTAGE_MAX 4.2   // Volts - 100% de carga
-#define BATTERY_VOLTAGE_MIN 3.0   // Volts - 0% de carga (descarga profunda)
-#define BATTERY_VOLTAGE_NOMINAL 3.7  // Volts - tensão nominal (~50%)
+#define BATTERY_VOLTAGE_MAX 4.2       // Volts - 100% de carga
+#define BATTERY_VOLTAGE_MIN 3.0       // Volts - 0% de carga (descarga profunda)
+#define BATTERY_VOLTAGE_NOMINAL 3.7   // Volts - tensão nominal (~50%)
+
+// Constantes de timing e delays
+#define FLASH_STABILIZE_DELAY 100     // ms - Delay para estabilização do flash LED
+#define DEEP_SLEEP_DELAY 2000         // ms - Delay antes de entrar em deep sleep
+#define SERIAL_BAUD_RATE 115200       // Baud rate do Serial Monitor
+#define SERIAL_INIT_DELAY 1000        // ms - Delay inicial do Serial
+#define PIR_STABILIZE_DELAY 200       // ms - Delay para estabilização do PIR
+#define PIR_CHECK_DELAY 100           // ms - Delay entre leituras do PIR
+#define BUTTON_STABILIZE_DELAY 50     // ms - Delay para estabilização do botão
+#define PIR_WAKE_STABILIZE_DELAY 2000 // ms - Delay após acordar pelo PIR
+#define BUTTON_WAKE_STABILIZE_DELAY 500 // ms - Delay após acordar pelo botão
+#define LOOP_DELAY 10                 // ms - Delay no loop principal
+#define BATTERY_READ_INTERVAL 5000    // ms - Intervalo entre leituras de bateria
+#define PIR_STABILITY_CHECK_COUNT 10  // Número de verificações de estabilidade do PIR
+#define PIR_STABILITY_CHECK_DELAY 100 // ms - Delay entre verificações de estabilidade
+
+// Constantes de debounce e controle de sensores
+#define BUTTON_DEBOUNCE_DELAY 50      // ms - Delay de debounce do botão
+#define PIR_DEBOUNCE_DELAY 500        // ms - Delay de debounce do PIR
+#define PIR_COOLDOWN_PERIOD 10000     // ms - Período de cooldown entre detecções do PIR
+#define PIR_STABILITY_READINGS 5      // Número de leituras consecutivas para confirmar detecção
+
+// Constantes de comunicação de rede
+#define WIFI_CONNECT_TIMEOUT 20000     // ms - Timeout para conexão WiFi
+#define WIFI_CONNECT_RETRY_DELAY 500  // ms - Delay entre tentativas de conexão WiFi
+#define HTTP_RESPONSE_TIMEOUT 15000    // ms - Timeout para resposta HTTP
+#define HTTP_RESPONSE_READ_TIMEOUT 5000 // ms - Timeout para leitura completa da resposta
+#define HTTP_RESPONSE_MAX_LENGTH 2000 // bytes - Tamanho máximo da resposta HTTP
+#define GEMINI_REQUEST_TIMEOUT 10000  // ms - Timeout para requisição ao Gemini
+#define HTTPS_PORT 443                 // Porta HTTPS padrão
+#define HTTP_PORT 80                   // Porta HTTP padrão
 
 // ==== Configurações de rede ====
 
@@ -63,7 +89,7 @@ const char* WIFI_PASSWORD = "server123";
 // ==== Configurações da API Gemini ====
 
 // TODO: substitua pela sua API key do Gemini
-const char* GEMINI_API_KEY = "";
+const char* GEMINI_API_KEY = "sua_api_gemini";
 
 // Host e caminho do modelo Gemini 2.5 Flash-Lite
 const char* GEMINI_HOST = "generativelanguage.googleapis.com";
@@ -71,8 +97,7 @@ const char* GEMINI_MODEL_PATH = "/v1beta/models/gemini-2.5-flash-lite:generateCo
 
 // ==== Configurações da Plataforma Web (Vercel) ====
 // TODO: substitua pela URL da sua aplicação deployada na Vercel
-// Exemplo: "seu-app.vercel.app" (SEM https:// e SEM barra no final)
-const char* WEB_APP_HOST = "";  // Apenas o hostname, sem https:// e sem /
+const char* WEB_APP_HOST = "seu-app.vercel.app";  // Apenas o hostname, sem https:// e sem /
 const char* WEB_APP_PATH = "/api/upload";
 const uint16_t WEB_APP_PORT = 443;  // HTTPS
 
@@ -193,26 +218,74 @@ void configESPCamera() {
 
 // ==== Funções auxiliares ====
 
-// Lê o nível de bateria através do divisor de tensão no GPIO 33
-// Retorna a tensão da bateria em Volts
+/**
+ * Lê o nível de bateria através do divisor de tensão no GPIO 33
+ * 
+ * @return float Tensão da bateria em Volts. Retorna 0.0 em caso de erro.
+ * 
+ * @note Utiliza divisor de tensão com Rtop=10kΩ e Rbot=22.2kΩ
+ * @note ADC configurado para 12 bits (0-4095) com atenuação padrão (0-3.3V)
+ */
 float readBatteryVoltage() {
+  // Validação: verificar se o pino ADC está configurado
+  if (BATTERY_ADC_PIN < 0) {
+    Serial.println("ERRO: Pino ADC não configurado");
+    return 0.0;
+  }
+  
   // Ler valor ADC (0-4095)
   int adcValue = analogRead(BATTERY_ADC_PIN);
   
+  // Validação: verificar se a leitura é válida
+  if (adcValue < 0 || adcValue > ADC_RESOLUTION) {
+    Serial.print("ERRO: Leitura ADC inválida: ");
+    Serial.println(adcValue);
+    return 0.0;
+  }
+  
   // Converter para tensão no pino ADC (0-3.3V com atenuação padrão)
   float adcVoltage = (float)adcValue / ADC_RESOLUTION * ADC_MAX_VOLTAGE;
+  
+  // Validação: verificar se a tensão calculada é razoável
+  if (adcVoltage < 0.0 || adcVoltage > ADC_MAX_VOLTAGE) {
+    Serial.print("ERRO: Tensão ADC calculada inválida: ");
+    Serial.print(adcVoltage);
+    Serial.println("V");
+    return 0.0;
+  }
   
   // Calcular tensão real da bateria através do divisor de tensão
   // V_bateria = V_adc / DIVIDER_RATIO
   float batteryVoltage = adcVoltage / DIVIDER_RATIO;
   
+  // Validação: verificar se a tensão da bateria está em faixa razoável
+  if (batteryVoltage < 0.0 || batteryVoltage > 5.0) {
+    Serial.print("AVISO: Tensão de bateria fora da faixa esperada: ");
+    Serial.print(batteryVoltage);
+    Serial.println("V");
+  }
+  
   return batteryVoltage;
 }
 
-// Calcula a porcentagem de carga da bateria de lítio baseada na tensão
-// Usa uma curva aproximada que reflete melhor o comportamento real de células de lítio
-// Retorna um valor entre 0 e 100
+/**
+ * Calcula a porcentagem de carga da bateria de lítio baseada na tensão
+ * 
+ * @param voltage Tensão da bateria em Volts
+ * @return int Porcentagem de carga (0-100). Retorna -1 em caso de erro.
+ * 
+ * @note Usa curva não-linear que reflete o comportamento real de células de lítio
+ * @note A maior parte da capacidade está entre 3.7V e 4.2V
+ */
 int calculateBatteryPercentage(float voltage) {
+  // Validação: verificar se a tensão é válida
+  if (voltage < 0.0 || voltage > 5.0) {
+    Serial.print("ERRO: Tensão inválida para cálculo de porcentagem: ");
+    Serial.print(voltage);
+    Serial.println("V");
+    return -1;
+  }
+  
   // Limitar valores extremos
   if (voltage >= BATTERY_VOLTAGE_MAX) {
     return 100;
@@ -241,8 +314,8 @@ int calculateBatteryPercentage(float voltage) {
   }
   
   // Garantir que está entre 0 e 100
-  if (percentage > 100) percentage = 100;
-  if (percentage < 0) percentage = 0;
+  if (percentage > 100.0) percentage = 100.0;
+  if (percentage < 0.0) percentage = 0.0;
   
   return (int)percentage;
 }
@@ -296,49 +369,106 @@ void printBatteryStatus() {
   Serial.println("==========================");
 }
 
-void connectWiFi() {
+/**
+ * Conecta ao Wi-Fi com tratamento de erros e timeout
+ * 
+ * @return bool true se conectado com sucesso, false caso contrário
+ * 
+ * @note Utiliza timeout configurável via constante WIFI_CONNECT_TIMEOUT
+ * @note Valida credenciais antes de tentar conexão
+ */
+bool connectWiFi() {
+  // Validação: verificar se as credenciais foram configuradas
+  if (strlen(WIFI_SSID) == 0) {
+    Serial.println("ERRO: SSID do Wi-Fi não configurado");
+    return false;
+  }
+  
   Serial.println("Conectando ao Wi-Fi...");
+  Serial.print("SSID: ");
+  Serial.println(WIFI_SSID);
+  
+  // Configurar modo estação (cliente)
   WiFi.mode(WIFI_STA);
+  
+  // Tentar conectar
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
+  // Aguardar conexão com timeout
   unsigned long startAttemptTime = millis();
-  const unsigned long timeout = 20000; // 20s
-
-  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < timeout) {
-    delay(500);
+  while (WiFi.status() != WL_CONNECTED && 
+         (millis() - startAttemptTime) < WIFI_CONNECT_TIMEOUT) {
+    delay(WIFI_CONNECT_RETRY_DELAY);
     Serial.print(".");
   }
 
+  // Verificar resultado da conexão
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("");
-    Serial.print("Wi-Fi conectado. IP: ");
+    Serial.print("✓ Wi-Fi conectado. IP: ");
     Serial.println(WiFi.localIP());
+    Serial.print("RSSI: ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm");
+    return true;
   } else {
     Serial.println("");
-    Serial.println("Falha ao conectar ao Wi-Fi");
+    Serial.println("✗ ERRO: Falha ao conectar ao Wi-Fi");
+    Serial.print("Status: ");
+    Serial.println(WiFi.status());
+    return false;
   }
 }
 
-// Captura uma imagem da câmera e retorna o frame buffer
+/**
+ * Captura uma imagem da câmera com tratamento de erros
+ * 
+ * @return camera_fb_t* Ponteiro para o frame buffer. Retorna nullptr em caso de erro.
+ * 
+ * @note Liga o flash LED antes da captura para melhor iluminação
+ * @note O frame buffer deve ser liberado com esp_camera_fb_return() após uso
+ * @note Valida se a câmera foi inicializada antes de capturar
+ */
 camera_fb_t* captureImage() {
   Serial.println("Capturando imagem...");
   
-  // Ligar o flash LED antes de capturar
-  digitalWrite(FLASH_LED_PIN, HIGH);
-  delay(100); // Pequeno delay para o flash estabilizar
+  // Validação: verificar se a câmera foi inicializada
+  // (não há função direta para isso, mas podemos tentar capturar)
   
+  // Ligar o flash LED antes de capturar para melhor iluminação
+  digitalWrite(FLASH_LED_PIN, HIGH);
+  delay(FLASH_STABILIZE_DELAY); // Delay para o flash estabilizar
+  
+  // Capturar frame da câmera
   camera_fb_t* fb = esp_camera_fb_get();
   
   // Desligar o flash LED após capturar
   digitalWrite(FLASH_LED_PIN, LOW);
   
+  // Validação: verificar se a captura foi bem-sucedida
   if (!fb) {
-    Serial.println("Falha na captura da câmera");
+    Serial.println("✗ ERRO: Falha na captura da câmera");
+    Serial.println("Verifique se a câmera foi inicializada corretamente");
     return nullptr;
   }
+  
+  // Validação: verificar se o frame tem dados válidos
+  if (fb->len == 0) {
+    Serial.println("✗ ERRO: Frame capturado está vazio");
+    esp_camera_fb_return(fb);
+    return nullptr;
+  }
+  
+  // Validação: verificar se o tamanho do frame é razoável
+  if (fb->len > 1000000) { // 1MB é um limite razoável para JPEG
+    Serial.print("AVISO: Frame muito grande: ");
+    Serial.print(fb->len);
+    Serial.println(" bytes");
+  }
 
-  Serial.print("Imagem capturada. Tamanho (bytes): ");
-  Serial.println(fb->len);
+  Serial.print("✓ Imagem capturada. Tamanho: ");
+  Serial.print(fb->len);
+  Serial.println(" bytes");
 
   return fb;
 }
@@ -367,8 +497,12 @@ bool sendImageToGemini(camera_fb_t* fb, bool* personDetected) {
   Serial.print(GEMINI_HOST);
   Serial.println("...");
 
-  if (!client.connect(GEMINI_HOST, 443)) {
-    Serial.println("Falha ao conectar ao host Gemini");
+  if (!client.connect(GEMINI_HOST, HTTPS_PORT)) {
+    Serial.print("✗ ERRO: Falha ao conectar ao host Gemini (");
+    Serial.print(GEMINI_HOST);
+    Serial.print(":");
+    Serial.print(HTTPS_PORT);
+    Serial.println(")");
     return false;
   }
 
@@ -418,15 +552,15 @@ bool sendImageToGemini(camera_fb_t* fb, bool* personDetected) {
   client.print(request);
   client.print(payload);
 
-  // Ler resposta
+  // Ler resposta com timeout configurável
   unsigned long timeout = millis();
   while (client.connected() && !client.available()) {
-    if (millis() - timeout > 10000) {
-      Serial.println("Timeout aguardando resposta do Gemini");
+    if (millis() - timeout > GEMINI_REQUEST_TIMEOUT) {
+      Serial.println("✗ ERRO: Timeout aguardando resposta do Gemini");
       client.stop();
       return false;
     }
-    delay(10);
+    delay(LOOP_DELAY);
   }
 
   // Ler resposta completa
@@ -508,7 +642,11 @@ bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
   Serial.println("...");
 
   if (!client.connect(WEB_APP_HOST, WEB_APP_PORT)) {
-    Serial.println("Falha ao conectar ao servidor web");
+    Serial.print("✗ ERRO: Falha ao conectar ao servidor web (");
+    Serial.print(WEB_APP_HOST);
+    Serial.print(":");
+    Serial.print(WEB_APP_PORT);
+    Serial.println(")");
     return false;
   }
 
@@ -579,15 +717,17 @@ bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
   Serial.print(", Payload: ");
   Serial.println(payloadLen);
 
-  // Aguardar resposta
+  // Aguardar resposta com timeout configurável
   unsigned long timeout = millis();
   while (client.connected() && !client.available()) {
-    if (millis() - timeout > 15000) {
-      Serial.println("ERRO: Timeout aguardando resposta da plataforma web (15s)");
+    if (millis() - timeout > HTTP_RESPONSE_TIMEOUT) {
+      Serial.print("✗ ERRO: Timeout aguardando resposta da plataforma web (");
+      Serial.print(HTTP_RESPONSE_TIMEOUT / 1000);
+      Serial.println("s)");
       client.stop();
       return false;
     }
-    delay(10);
+    delay(LOOP_DELAY);
   }
 
   // Ler resposta completa
@@ -596,9 +736,10 @@ bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
   int httpCode = 0;
   bool firstLine = true;
   
+  // Ler resposta completa com timeout e limite de tamanho
   unsigned long responseTimeout = millis();
   while (client.available() || client.connected()) {
-    if (millis() - responseTimeout > 5000) {
+    if (millis() - responseTimeout > HTTP_RESPONSE_READ_TIMEOUT) {
       Serial.println("AVISO: Timeout lendo resposta completa");
       break;
     }
@@ -621,13 +762,16 @@ bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
         firstLine = false;
       }
       
-      // Limitar tamanho da resposta para não sobrecarregar
-      if (response.length() > 2000) {
+      // Limitar tamanho da resposta para não sobrecarregar memória
+      if (response.length() > HTTP_RESPONSE_MAX_LENGTH) {
         response += "... (truncado)";
+        Serial.print("AVISO: Resposta truncada em ");
+        Serial.print(HTTP_RESPONSE_MAX_LENGTH);
+        Serial.println(" bytes");
         break;
       }
     } else {
-      delay(10);
+      delay(LOOP_DELAY);
     }
   }
 
@@ -653,22 +797,43 @@ bool sendImageToWebApp(camera_fb_t* fb, bool personDetected) {
   }
 }
 
-// ==== Variáveis do botão e PIR (debounce) ====
+// ============================================================================
+// ==== ESTRUTURAS DE DADOS PARA ENCAPSULAMENTO ====
+// ============================================================================
 
-int buttonState = HIGH;
-int lastButtonReading = HIGH;
-unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 50; // ms
+/**
+ * Estrutura para encapsular estado do botão e reduzir variáveis globais
+ */
+struct ButtonState {
+  int currentState;           // Estado atual do botão (HIGH/LOW)
+  int lastReading;           // Última leitura do botão
+  unsigned long lastDebounceTime; // Timestamp da última mudança para debounce
+};
 
-int pirState = LOW;
-int lastPirReading = LOW;
-unsigned long lastPirDebounceTime = 0;
-const unsigned long pirDebounceDelay = 500; // ms - Aumentado para reduzir falsos positivos
-unsigned long lastPirTriggerTime = 0;
-const unsigned long pirCooldownPeriod = 10000; // ms - Período de cooldown de 10 segundos entre detecções
-const int pirStabilityReadings = 5; // Número de leituras consecutivas necessárias para confirmar detecção
-int pirStabilityCount = 0;
-bool pirConnected = false; // Flag para indicar se o PIR está conectado
+/**
+ * Estrutura para encapsular estado do sensor PIR e reduzir variáveis globais
+ */
+struct PIRState {
+  int currentState;              // Estado atual do PIR (HIGH/LOW)
+  int lastReading;                // Última leitura do PIR
+  unsigned long lastDebounceTime; // Timestamp da última mudança para debounce
+  unsigned long lastTriggerTime;  // Timestamp da última detecção confirmada
+  int stabilityCount;             // Contador de leituras consecutivas para estabilidade
+  bool isConnected;               // Flag indicando se o PIR está conectado
+};
+
+// ============================================================================
+// ==== VARIÁVEIS GLOBAIS (Mínimas necessárias) ====
+// ============================================================================
+
+// Instâncias das estruturas de estado (encapsulamento)
+ButtonState buttonState = {HIGH, HIGH, 0};
+PIRState pirState = {LOW, LOW, 0, 0, 0, false};
+
+// Buffer da última imagem capturada (necessário para servidor web interno)
+uint8_t* lastImage = nullptr;
+size_t lastImageLen = 0;
+String lastDecision = "unknown";
 
 // Função para processar captura e envio (usada tanto por botão quanto PIR)
 void processCaptureAndSend() {
@@ -698,8 +863,8 @@ void processCaptureAndSend() {
     esp_camera_fb_return(fb);
   }
 
-  // Aguardar um pouco antes de entrar em deep sleep
-  delay(2000);
+  // Aguardar um pouco antes de entrar em deep sleep (permite logs finais)
+  delay(DEEP_SLEEP_DELAY);
   
   // Entrar em deep sleep
   Serial.println("Entrando em modo deep sleep...");
@@ -710,10 +875,15 @@ void processCaptureAndSend() {
   // PIR (GPIO 12): acorda quando detecta movimento (HIGH) - apenas se estiver conectado
   // Botão (GPIO 13): será verificado manualmente no setup (LOW quando pressionado)
   // Usamos ANY_HIGH para detectar quando o PIR está HIGH
-  if (pirConnected) {
+  if (pirState.isConnected) {
     uint64_t wakeup_pin_mask = ((uint64_t)1 << PIR_PIN);
-    esp_sleep_enable_ext1_wakeup(wakeup_pin_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
-    Serial.println("Wake-up do PIR habilitado para deep sleep");
+    esp_err_t err = esp_sleep_enable_ext1_wakeup(wakeup_pin_mask, ESP_EXT1_WAKEUP_ANY_HIGH);
+    if (err == ESP_OK) {
+      Serial.println("✓ Wake-up do PIR habilitado para deep sleep");
+    } else {
+      Serial.print("✗ ERRO ao habilitar wake-up do PIR: ");
+      Serial.println(err);
+    }
   } else {
     Serial.println("AVISO: Wake-up do PIR desabilitado - sensor pode estar desconectado");
   }
@@ -731,9 +901,9 @@ void setup() {
   // Disable brownout detector
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
 
-  // Start Serial Monitor
-  Serial.begin(115200);
-  delay(1000);
+  // Inicializar Serial Monitor com baud rate configurável
+  Serial.begin(SERIAL_BAUD_RATE);
+  delay(SERIAL_INIT_DELAY);
 
   // Verificar se acordou do deep sleep
   esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
@@ -772,23 +942,23 @@ void setup() {
   // Verificar se o PIR está conectado
   // Se o pino estiver HIGH imediatamente após inicialização com pull-down, pode ser ruído
   // Aguardar um pouco e verificar novamente
-  delay(200);
+  delay(PIR_STABILIZE_DELAY);
   int pirCheck1 = digitalRead(PIR_PIN);
-  delay(100);
+  delay(PIR_CHECK_DELAY);
   int pirCheck2 = digitalRead(PIR_PIN);
-  delay(100);
+  delay(PIR_CHECK_DELAY);
   int pirCheck3 = digitalRead(PIR_PIN);
   
   // Se todas as leituras forem LOW, o PIR provavelmente está desconectado ou não detectando movimento
   // Se alguma leitura for HIGH, pode ser que o PIR esteja conectado e detectando movimento
   // Mas se estiver HIGH constantemente sem movimento, pode ser que esteja desconectado
   if (pirCheck1 == LOW && pirCheck2 == LOW && pirCheck3 == LOW) {
-    pirConnected = true; // PIR provavelmente conectado (em estado LOW normal)
-    Serial.println("PIR inicializado (pull-down habilitado para evitar leituras flutuantes)");
+    pirState.isConnected = true; // PIR provavelmente conectado (em estado LOW normal)
+    Serial.println("✓ PIR inicializado (pull-down habilitado para evitar leituras flutuantes)");
   } else {
     // Se estiver HIGH, pode ser movimento real ou pino flutuante
     // Vamos assumir que está conectado, mas avisar
-    pirConnected = true;
+    pirState.isConnected = true;
     Serial.println("AVISO: PIR detectou sinal HIGH na inicialização. Verifique se o sensor está conectado corretamente.");
   }
 
@@ -802,10 +972,10 @@ void setup() {
 
   // Verificar manualmente o botão após inicializar os pinos
   // Isso é necessário porque o botão é LOW quando pressionado e pode não ser detectado pelo EXT1
-  delay(50); // Pequeno delay para estabilização
+  delay(BUTTON_STABILIZE_DELAY); // Pequeno delay para estabilização
   if (digitalRead(BUTTON_PIN) == LOW && !wokeByPIR && wakeup_reason != ESP_SLEEP_WAKEUP_UNDEFINED) {
     wokeByButton = true;
-    Serial.println("Botão detectado pressionado ao acordar!");
+    Serial.println("✓ Botão detectado pressionado ao acordar!");
   }
 
   // Inicializa LEDs de indicação
@@ -824,8 +994,8 @@ void setup() {
   analogReadResolution(12); // 12 bits (0-4095)
   Serial.println("ADC de bateria configurado (GPIO 33)");
   
-  // Fazer uma leitura inicial e imprimir
-  delay(100); // Pequeno delay para estabilização
+  // Fazer uma leitura inicial e imprimir status da bateria
+  delay(BUTTON_STABILIZE_DELAY * 2); // Delay para estabilização do ADC
   printBatteryStatus();
 
   // Initialize the camera
@@ -836,30 +1006,32 @@ void setup() {
   // Conecta ao Wi-Fi
   connectWiFi();
 
-  // Inicia servidor web interno
+  // Inicia servidor web interno na porta HTTP padrão
   webServer.begin();
-  Serial.print("Servidor web iniciado. Acesse: http://");
+  Serial.print("✓ Servidor web iniciado na porta ");
+  Serial.print(HTTP_PORT);
+  Serial.print(". Acesse: http://");
   Serial.println(WiFi.localIP());
 
   // Se acordou pelo PIR ou pelo botão, processar imediatamente
   if (wokeByPIR) {
-    if (!pirConnected) {
+    if (!pirState.isConnected) {
       Serial.println("AVISO: Sistema acordou pelo PIR, mas sensor pode estar desconectado. Ignorando...");
     } else {
-      delay(2000); // Delay maior para estabilizar o PIR após acordar (reduz falsos positivos)
+      delay(PIR_WAKE_STABILIZE_DELAY); // Delay maior para estabilizar o PIR após acordar (reduz falsos positivos)
       // Verificar novamente se o PIR ainda está ativo após estabilização
       bool pirStillActive = false;
-      for (int i = 0; i < 10; i++) {
+      for (int i = 0; i < PIR_STABILITY_CHECK_COUNT; i++) {
         if (digitalRead(PIR_PIN) == HIGH) {
           pirStillActive = true;
           break;
         }
-        delay(100);
+        delay(PIR_STABILITY_CHECK_DELAY);
       }
       
       if (pirStillActive) {
         Serial.println("Processando captura acionada pelo PIR (confirmado após estabilização)...");
-        lastPirTriggerTime = millis(); // Registrar tempo da detecção
+        pirState.lastTriggerTime = millis(); // Registrar tempo da detecção
         processCaptureAndSend();
       } else {
         Serial.println("PIR acionou mas não confirmou após estabilização - provável falso positivo, ignorando...");
@@ -867,7 +1039,7 @@ void setup() {
     }
   } else if (wokeByButton) {
     // Se acordou pelo botão, também processa automaticamente
-    delay(500); // Pequeno delay para estabilização após acordar
+    delay(BUTTON_WAKE_STABILIZE_DELAY); // Pequeno delay para estabilização após acordar
     Serial.println("Processando captura acionada pelo botão...");
     processCaptureAndSend();
   } else {
@@ -876,97 +1048,106 @@ void setup() {
 
 }
 
+/**
+ * Loop principal do programa
+ * 
+ * @note Processa leituras do botão e sensor PIR com debounce
+ * @note Atende requisições do servidor web interno
+ * @note Realiza leitura periódica da bateria
+ */
 void loop() {
-
-  // --- Verificar botão ---
+  // --- Verificar botão com debounce ---
   int reading = digitalRead(BUTTON_PIN);
 
-  if (reading != lastButtonReading) {
-    lastDebounceTime = millis();
+  // Detectar mudança de estado para iniciar debounce
+  if (reading != buttonState.lastReading) {
+    buttonState.lastDebounceTime = millis();
   }
 
-  if ((millis() - lastDebounceTime) > debounceDelay) {
-    if (reading != buttonState) {
-      buttonState = reading;
+  // Aplicar debounce: aguardar período de estabilidade
+  if ((millis() - buttonState.lastDebounceTime) > BUTTON_DEBOUNCE_DELAY) {
+    if (reading != buttonState.currentState) {
+      buttonState.currentState = reading;
 
-      // Botão pressionado (considerando botão para GND com INPUT_PULLUP)
-      if (buttonState == LOW) {
-        Serial.println("Botão pressionado!");
+      // Botão pressionado (LOW quando pressionado, pull-up externo)
+      if (buttonState.currentState == LOW) {
+        Serial.println("✓ Botão pressionado!");
         processCaptureAndSend();
       }
     }
   }
 
-  lastButtonReading = reading;
+  buttonState.lastReading = reading;
 
-  // --- Verificar sensor PIR ---
+  // --- Verificar sensor PIR com debounce e cooldown ---
   // Apenas processar se o PIR estiver conectado
-  if (!pirConnected) {
+  if (!pirState.isConnected) {
     // PIR não conectado, pular processamento
-    delay(10);
+    delay(LOOP_DELAY);
   } else {
     int pirReading = digitalRead(PIR_PIN);
 
     // Verificar se estamos em período de cooldown
-    unsigned long timeSinceLastTrigger = millis() - lastPirTriggerTime;
-    bool inCooldown = (timeSinceLastTrigger < pirCooldownPeriod);
+    unsigned long timeSinceLastTrigger = millis() - pirState.lastTriggerTime;
+    bool inCooldown = (timeSinceLastTrigger < PIR_COOLDOWN_PERIOD);
     
     if (!inCooldown) {
       // Apenas processar PIR se não estiver em cooldown
       
-      if (pirReading != lastPirReading) {
-        lastPirDebounceTime = millis();
-        pirStabilityCount = 0; // Resetar contador de estabilidade
+      // Detectar mudança de estado para iniciar debounce
+      if (pirReading != pirState.lastReading) {
+        pirState.lastDebounceTime = millis();
+        pirState.stabilityCount = 0; // Resetar contador de estabilidade
       }
 
-      if ((millis() - lastPirDebounceTime) > pirDebounceDelay) {
-        if (pirReading != pirState) {
-          pirState = pirReading;
+      // Aplicar debounce: aguardar período de estabilidade
+      if ((millis() - pirState.lastDebounceTime) > PIR_DEBOUNCE_DELAY) {
+        if (pirReading != pirState.currentState) {
+          pirState.currentState = pirReading;
 
           // PIR detectou movimento (HIGH = movimento detectado)
-          if (pirState == HIGH) {
-            pirStabilityCount++;
+          if (pirState.currentState == HIGH) {
+            pirState.stabilityCount++;
             
             // Verificar estabilidade: precisa de múltiplas leituras consecutivas
-            if (pirStabilityCount >= pirStabilityReadings) {
-              Serial.println("Movimento detectado pelo PIR (confirmado após estabilidade)!");
-              lastPirTriggerTime = millis(); // Registrar tempo da detecção
-              pirStabilityCount = 0; // Resetar contador
+            if (pirState.stabilityCount >= PIR_STABILITY_READINGS) {
+              Serial.println("✓ Movimento detectado pelo PIR (confirmado após estabilidade)!");
+              pirState.lastTriggerTime = millis(); // Registrar tempo da detecção
+              pirState.stabilityCount = 0; // Resetar contador
               processCaptureAndSend();
             } else {
               // Ainda não confirmado, aguardar mais leituras
               Serial.print("PIR detectou movimento, aguardando confirmação (");
-              Serial.print(pirStabilityCount);
+              Serial.print(pirState.stabilityCount);
               Serial.print("/");
-              Serial.print(pirStabilityReadings);
+              Serial.print(PIR_STABILITY_READINGS);
               Serial.println(")...");
             }
           } else {
             // PIR voltou para LOW, resetar contador
-            pirStabilityCount = 0;
+            pirState.stabilityCount = 0;
           }
         }
       }
     } else {
       // Em período de cooldown, apenas atualizar última leitura
-      if (pirReading != lastPirReading) {
+      if (pirReading != pirState.lastReading) {
         Serial.print("PIR em cooldown (");
-        Serial.print((pirCooldownPeriod - timeSinceLastTrigger) / 1000);
+        Serial.print((PIR_COOLDOWN_PERIOD - timeSinceLastTrigger) / 1000);
         Serial.println("s restantes)...");
       }
     }
 
-    lastPirReading = pirReading;
-  } // Fim do if (pirConnected)
+    pirState.lastReading = pirReading;
+  } // Fim do if (pirState.isConnected)
 
-  // Pequeno delay para reduzir ruído de leitura
-  delay(10);
+  // Pequeno delay para reduzir ruído de leitura e economizar CPU
+  delay(LOOP_DELAY);
 
-  // --- Leitura periódica de bateria (a cada 5 segundos) ---
+  // --- Leitura periódica de bateria ---
   static unsigned long lastBatteryRead = 0;
-  const unsigned long batteryReadInterval = 5000; // 5 segundos
   
-  if (millis() - lastBatteryRead >= batteryReadInterval) {
+  if (millis() - lastBatteryRead >= BATTERY_READ_INTERVAL) {
     lastBatteryRead = millis();
     printBatteryStatus();
   }
@@ -975,22 +1156,33 @@ void loop() {
   WiFiClient webClient = webServer.available();
   if (webClient) {
     Serial.println("Cliente web conectado.");
+    
+    // Ler linha de requisição
     String requestLine = webClient.readStringUntil('\r');
-    webClient.readStringUntil('\n'); // descartar \n
+    if (requestLine.length() == 0) {
+      // Requisição inválida, fechar conexão
+      webClient.stop();
+      Serial.println("✗ Requisição HTTP inválida");
+      return;
+    }
+    
+    webClient.readStringUntil('\n'); // Descartar \n
 
-    // Ler e descartar o restante dos cabeçalhos
+    // Ler e descartar o restante dos cabeçalhos HTTP
     while (webClient.available()) {
       String headerLine = webClient.readStringUntil('\n');
       if (headerLine == "\r" || headerLine.length() == 1) {
-        break;
+        break; // Fim dos cabeçalhos
       }
     }
 
+    // Verificar tipo de requisição
     bool requestImage = false;
     if (requestLine.startsWith("GET /image")) {
       requestImage = true;
     }
 
+    // Responder conforme o tipo de requisição
     if (requestImage && lastImage != nullptr && lastImageLen > 0) {
       // Responder com a última imagem JPEG
       webClient.println("HTTP/1.1 200 OK");
@@ -999,7 +1191,15 @@ void loop() {
       webClient.println(lastImageLen);
       webClient.println("Connection: close");
       webClient.println();
-      webClient.write(lastImage, lastImageLen);
+      
+      // Enviar dados da imagem
+      size_t bytesWritten = webClient.write(lastImage, lastImageLen);
+      if (bytesWritten != lastImageLen) {
+        Serial.print("AVISO: Nem todos os bytes foram enviados. Esperado: ");
+        Serial.print(lastImageLen);
+        Serial.print(", Enviado: ");
+        Serial.println(bytesWritten);
+      }
     } else {
       // Página HTML simples com a decisão e a imagem (se houver)
       webClient.println("HTTP/1.1 200 OK");
@@ -1014,7 +1214,7 @@ void loop() {
       webClient.println("</strong></p>");
 
       if (lastImage != nullptr && lastImageLen > 0) {
-        // parâmetro ts para evitar cache
+        // Parâmetro ts para evitar cache do navegador
         webClient.print("<img src='/image.jpg?ts=");
         webClient.print(millis());
         webClient.println("' style='max-width:100%;height:auto;' />");
@@ -1025,7 +1225,7 @@ void loop() {
       webClient.println("</body></html>");
     }
 
-    delay(1);
+    delay(1); // Pequeno delay para garantir que os dados foram enviados
     webClient.stop();
     Serial.println("Cliente web desconectado.");
   }

@@ -8,7 +8,7 @@ Código simples para testar e configurar o sensor PIR. Mostra os valores lidos n
 
 ### 1. Abrir o Código
 
-Abra a pasta `DEBUG_PIR` no Arduino IDE e abra o arquivo `DEBUG_PIR.ino`.
+Abra a pasta `src/tools/debug_pir` no Arduino IDE e abra o arquivo `debug_pir.ino`.
 
 ### 2. Configurar a Placa
 
@@ -97,10 +97,12 @@ Alguns sensores PIR têm potenciômetros para ajustar:
 ## 🔄 Voltar ao Código Principal
 
 Após configurar o PIR, volte a usar o código principal:
-- `DroneBotWorkshopCode/DroneBotWorkshopCode.ino`
+- `src/monitoramento de via/firmware/firmware.ino`
 
 ---
 
 **Dica:** Deixe este código rodando por alguns minutos para observar o comportamento do PIR e identificar padrões de falsos positivos.
+
+
 
 

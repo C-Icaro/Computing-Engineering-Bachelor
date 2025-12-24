@@ -1,45 +1,126 @@
+/**
+ * Página principal do visualizador de imagens da ESP32-CAM
+ * 
+ * Exibe a última imagem capturada pela ESP32-CAM junto com informações de:
+ * - Detecção de pessoa (via Gemini AI)
+ * - Status da bateria (tensão e porcentagem)
+ * - Timestamp da captura
+ * 
+ * @module pages/index
+ * @component
+ * 
+ * @returns {JSX.Element} Componente React da página principal
+ */
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
 
+/**
+ * Componente principal da página Home
+ * 
+ * Gerencia o estado da última imagem, atualização automática e tratamento de erros.
+ * 
+ * @function Home
+ * @returns {JSX.Element}
+ */
+// ============================================================================
+// ==== CONSTANTES DE CONFIGURAÇÃO ====
+// ============================================================================
+
+/** Intervalo de atualização automática em milissegundos */
+const AUTO_REFRESH_INTERVAL = 5000; // 5 segundos
+
+/** Endpoint da API para buscar última imagem */
+const API_LATEST_ENDPOINT = '/api/latest';
+
+/** Locale para formatação de data */
+const DATE_LOCALE = 'pt-BR';
+
+// ============================================================================
+// ==== COMPONENTE PRINCIPAL ====
+// ============================================================================
+
 export default function Home() {
+  // Estados do componente (encapsulados)
   const [latestImage, setLatestImage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  // Função para buscar a última imagem
+  /**
+   * Busca a última imagem capturada da API
+   * 
+   * @async
+   * @function fetchLatestImage
+   * @returns {Promise<void>}
+   * 
+   * @description
+   * Faz requisição GET para /api/latest e atualiza o estado local.
+   * Trata erros de rede e respostas vazias.
+   */
   const fetchLatestImage = async () => {
     try {
-      const response = await fetch('/api/latest');
-      if (response.ok) {
-        const data = await response.json();
-        if (data) {
-          setLatestImage(data);
-          setError(null);
-        } else {
-          setError('Nenhuma imagem disponível ainda');
-        }
+      // Fazer requisição para API
+      const response = await fetch(API_LATEST_ENDPOINT);
+      
+      // Verificar se a resposta foi bem-sucedida
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      // Parsear JSON da resposta
+      const data = await response.json();
+      
+      // Validar dados recebidos
+      if (data && typeof data === 'object') {
+        setLatestImage(data);
+        setError(null);
       } else {
+        // Resposta null ou inválida
+        setLatestImage(null);
         setError('Nenhuma imagem disponível ainda');
       }
     } catch (err) {
-      setError('Erro ao buscar imagem');
-      console.error(err);
+      // Tratamento de erros de rede ou parsing
+      console.error('✗ ERRO ao buscar imagem:', err);
+      setError('Erro ao buscar imagem. Verifique a conexão.');
+      setLatestImage(null);
     } finally {
       setLoading(false);
     }
   };
 
-  // Buscar imagem ao carregar e configurar auto-refresh
+  /**
+   * Effect para buscar imagem inicial e configurar auto-refresh
+   * 
+   * @effect
+   * @description
+   * - Busca imagem imediatamente ao montar o componente
+   * - Configura intervalo de atualização automática se habilitado
+   * - Limpa intervalo ao desmontar ou quando autoRefresh muda
+   */
   useEffect(() => {
+    // Buscar imagem imediatamente
     fetchLatestImage();
     
+    // Configurar auto-refresh se habilitado
     if (autoRefresh) {
-      const interval = setInterval(fetchLatestImage, 5000); // Atualizar a cada 5 segundos
-      return () => clearInterval(interval);
+      const interval = setInterval(fetchLatestImage, AUTO_REFRESH_INTERVAL);
+      
+      // Cleanup: limpar intervalo ao desmontar ou quando autoRefresh mudar
+      return () => {
+        clearInterval(interval);
+      };
     }
-  }, [autoRefresh]);
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh]); // Dependência: autoRefresh
 
+  /**
+   * Retorna cor e texto baseado na decisão do Gemini
+   * 
+   * @param {string} decision - Decisão: "person", "no_person" ou outro
+   * @returns {Object} Objeto com color (hex), text (string) e icon (emoji)
+   */
   const getDecisionColor = (decision) => {
     if (decision === 'person') {
       return { color: '#ef4444', text: 'Pessoa Detectada', icon: '🔴' };
@@ -49,6 +130,18 @@ export default function Home() {
     return { color: '#6b7280', text: 'Desconhecido', icon: '⚪' };
   };
 
+  /**
+   * Retorna cor baseada na porcentagem da bateria
+   * 
+   * @param {number} percentage - Porcentagem da bateria (0-100)
+   * @returns {string} Cor em hexadecimal
+   * 
+   * @description
+   * - >= 80%: Verde (#22c55e) - Alta
+   * - >= 50%: Amarelo (#f59e0b) - Média
+   * - >= 20%: Laranja (#f97316) - Baixa
+   * - < 20%: Vermelho (#ef4444) - Crítica
+   */
   const getBatteryColor = (percentage) => {
     if (percentage >= 80) return '#22c55e'; // Verde - Alta
     if (percentage >= 50) return '#f59e0b'; // Amarelo - Média
@@ -56,6 +149,12 @@ export default function Home() {
     return '#ef4444'; // Vermelho - Crítica
   };
 
+  /**
+   * Retorna status textual da bateria baseado na porcentagem
+   * 
+   * @param {number} percentage - Porcentagem da bateria (0-100)
+   * @returns {string} Status: "Alta", "Média", "Baixa" ou "Crítica"
+   */
   const getBatteryStatus = (percentage) => {
     if (percentage >= 80) return 'Alta';
     if (percentage >= 50) return 'Média';
@@ -134,7 +233,7 @@ export default function Home() {
               <div style={styles.infoItem}>
                 <span style={styles.infoLabel}>Capturada em:</span>
                 <span style={styles.timestamp}>
-                  {new Date(latestImage.timestamp).toLocaleString('pt-BR')}
+                  {new Date(latestImage.timestamp).toLocaleString(DATE_LOCALE)}
                 </span>
               </div>
             </div>
